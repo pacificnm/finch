@@ -4,6 +4,8 @@
 
 The Workspace Manager controls how users organize work inside Finch. It manages workspaces, tabs, split layouts, panel placement, focus state, layout persistence, and session restoration.
 
+This subsystem is central to Finch because it defines the user's day-to-day interaction model.
+
 ## Goals
 
 - Support named workspaces.
@@ -13,6 +15,16 @@ The Workspace Manager controls how users organize work inside Finch. It manages 
 - Provide fast keyboard-first navigation.
 - Keep panel placement separate from panel behavior.
 - Allow plugins to contribute panels without directly modifying workspace internals.
+- Support future layout features such as floating panels, layout templates, and project-aware workspaces.
+
+## Non-Goals for MVP
+
+- Graphical drag-and-drop layout editing.
+- Overlapping window management.
+- Cloud synchronization.
+- Multi-machine workspace state.
+
+The MVP should focus on predictable keyboard-driven layouts.
 
 ## Core Concepts
 
@@ -20,9 +32,26 @@ The Workspace Manager controls how users organize work inside Finch. It manages 
 
 A workspace is a named environment containing tabs, layouts, panels, focus state, and metadata.
 
+Example workspace names:
+
+- `default`
+- `dev`
+- `ops`
+- `kubernetes`
+- `homelab`
+- `incident-response`
+
 ### Tab
 
 A tab is a top-level page inside a workspace. Each workspace may contain multiple tabs.
+
+Example tabs:
+
+- `Main`
+- `Logs`
+- `Git`
+- `Cluster`
+- `Monitoring`
 
 ### Split
 
@@ -35,6 +64,20 @@ A panel is a renderable unit placed inside a layout container. The Workspace Man
 ### Focus
 
 Focus identifies which panel receives keyboard input. Focus is workspace-local and should be restored when switching tabs or workspaces.
+
+## High-Level Architecture
+
+```text
++--------------------------------------------------+
+|                Workspace Manager                 |
++--------------------------------------------------+
+| Workspace Registry | Layout Engine | Focus Graph  |
+| Session Store      | Tab Manager    | Dock Manager |
++--------------------------------------------------+
+        |                 |                  |
+        v                 v                  v
+  State Manager       Panel Manager       Event Bus
+```
 
 ## Responsibilities
 
@@ -58,9 +101,65 @@ The Workspace Manager is not responsible for:
 - Managing global configuration.
 - Running background tasks.
 
-## Layout Model
+## Data Model
+
+```rust
+pub struct Workspace {
+    pub id: WorkspaceId,
+    pub name: String,
+    pub tabs: Vec<Tab>,
+    pub active_tab: Option<TabId>,
+    pub focus: FocusState,
+    pub metadata: WorkspaceMetadata,
+}
+
+pub struct Tab {
+    pub id: TabId,
+    pub title: String,
+    pub root: LayoutNode,
+    pub active_panel: Option<PanelId>,
+}
+
+pub enum LayoutNode {
+    Panel(PanelPlacement),
+    Split(SplitNode),
+    Empty,
+}
+
+pub struct SplitNode {
+    pub direction: SplitDirection,
+    pub ratio: f32,
+    pub first: Box<LayoutNode>,
+    pub second: Box<LayoutNode>,
+}
+
+pub enum SplitDirection {
+    Horizontal,
+    Vertical,
+}
+
+pub struct PanelPlacement {
+    pub panel_id: PanelId,
+    pub preferred_size: Option<PanelSize>,
+    pub min_size: Option<PanelSize>,
+}
+```
+
+## Layout Tree
 
 Layouts should be represented as trees. A tree model makes nested splits simple, serializable, and testable.
+
+Example:
+
+```text
+Tab: Dev
+
+Vertical Split
+- Panel: File Browser
+- Horizontal Split
+  - Panel: Terminal
+  - Panel: Git
+```
 
 Each layout node should be one of:
 
@@ -75,7 +174,9 @@ A split node should include:
 - First child
 - Second child
 
-## Required Operations
+## Layout Operations
+
+Required operations:
 
 - Open panel in current tab.
 - Split focused panel horizontally.
@@ -101,6 +202,28 @@ Initial focus rules:
 - Switching workspaces restores the last focused tab and panel for that workspace.
 - Directional focus movement should use resolved panel geometry.
 
+## Docking Model
+
+MVP docking should support fixed regions:
+
+- Left dock
+- Right dock
+- Bottom dock
+- Main area
+
+```text
++--------------------------------------------------+
+| Top Bar                                          |
++----------+-----------------------------+---------+
+| Left     | Main Area                   | Right   |
+| Dock     |                             | Dock    |
++----------+-----------------------------+---------+
+| Bottom Dock                                      |
++--------------------------------------------------+
+| Status Bar                                       |
++--------------------------------------------------+
+```
+
 ## Persistence
 
 Workspace layouts should be stored in human-readable files under:
@@ -118,6 +241,46 @@ Workspace files should include:
 - Panel instance IDs
 - Focus state
 - Dock state
+
+Example:
+
+```toml
+schema_version = 1
+name = "dev"
+active_tab = "main"
+
+[[tabs]]
+id = "main"
+title = "Main"
+```
+
+## Serialization
+
+Serialized layouts must include enough information to restore the user's visible workspace without embedding unnecessary runtime data.
+
+Required serialized data:
+
+- Workspace name
+- Workspace ID
+- Schema version
+- Tabs
+- Layout tree
+- Panel type identifiers
+- Panel instance IDs
+- Focus state
+- Dock state
+
+Serialized layouts should avoid sensitive runtime data unless a panel explicitly opts in through its own persistence contract.
+
+## Versioning
+
+Workspace files should include a schema version so Finch can migrate older layouts when the format changes.
+
+```toml
+schema_version = 1
+```
+
+When the schema changes, Finch should provide migrations where practical.
 
 ## Events
 
@@ -144,11 +307,40 @@ The Workspace Manager should subscribe to:
 
 ## Plugin Integration
 
-Plugins may request workspace actions through approved commands or SDK methods. Plugins should not mutate workspace state directly.
+Plugins may request workspace actions through approved commands or SDK methods.
+
+Examples:
+
+- Open plugin panel in current workspace.
+- Open plugin panel in a new tab.
+- Request focus for a plugin panel.
+- Save plugin-specific panel state.
+
+Plugins should not mutate workspace state directly.
 
 ## Error Handling
 
-Workspace operations should return structured errors. A failed workspace operation should not corrupt the current layout.
+Workspace operations should return structured errors.
+
+Examples:
+
+- Workspace not found
+- Tab not found
+- Panel not found
+- Invalid layout tree
+- Serialization failed
+- Persistence failed
+- Schema migration failed
+
+A failed workspace operation should not corrupt the current layout.
+
+## Performance Considerations
+
+- Layout calculation should be fast and deterministic.
+- Rendering should use cached layout geometry when possible.
+- Repeated resize events should be coalesced.
+- Workspace persistence should avoid blocking the UI thread.
+- Large workspace files should be loaded asynchronously.
 
 ## MVP Requirements
 
@@ -170,6 +362,7 @@ The first implementation should support:
 - Floating panels.
 - Workspace profiles.
 - Project-aware workspaces.
+- Remote SSH workspaces.
 - Visual layout editor.
 - Workspace import and export.
 
@@ -179,3 +372,4 @@ The first implementation should support:
 - Should workspaces be global or project-scoped by default?
 - Should panel instance state live inside workspace files or separate panel state files?
 - How much layout control should plugins receive?
+- Should Finch support attachable sessions in the future?
