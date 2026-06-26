@@ -2,6 +2,21 @@ use crate::state::notification::Notification;
 use crate::state::panel::OpenPanelRequest;
 use crate::types::{PanelId, PluginId, TaskId, WorkspaceId};
 
+/// Actions that a panel may return from `handle_input` or `on_event`.
+/// The host validates and translates these into `AppAction` values before
+/// applying them to `AppState`.
+#[derive(Debug, Clone)]
+pub enum PanelAction {
+    None,
+    Quit,
+    Redraw,
+    Close,
+    RequestFocus,
+    OpenPanel(OpenPanelRequest),
+    Notify(Notification),
+    StartTask(TaskRequest),
+}
+
 #[derive(Debug, Clone)]
 pub enum AppAction {
     Quit,
