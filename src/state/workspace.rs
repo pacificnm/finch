@@ -60,9 +60,7 @@ impl WorkspaceStore {
 
     pub fn focus_panel(&mut self, panel_id: PanelId) {
         if let Some(ws) = self.active_workspace_mut() {
-            let prev = ws.focus.focused_panel;
-            ws.focus.previous_panel = prev;
-            ws.focus.focused_panel = Some(panel_id);
+            ws.focus.focus(panel_id);
         }
     }
 
