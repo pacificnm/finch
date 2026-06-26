@@ -31,3 +31,51 @@ pub struct AppState {
     pub plugins: PluginStore,
     pub session: SessionState,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_constructs_without_panic() {
+        let _ = AppState::default();
+    }
+
+    #[test]
+    fn default_command_palette_is_closed() {
+        let s = AppState::default();
+        assert!(!s.ui.command_palette.open);
+    }
+
+    #[test]
+    fn default_has_no_active_workspace() {
+        let s = AppState::default();
+        assert!(s.workspaces.active_workspace().is_none());
+    }
+
+    #[test]
+    fn default_has_no_active_tasks() {
+        let s = AppState::default();
+        assert_eq!(s.tasks.active_count(), 0);
+    }
+
+    #[test]
+    fn default_has_no_unread_notifications() {
+        let s = AppState::default();
+        assert_eq!(s.notifications.unread_count(), 0);
+    }
+
+    #[test]
+    fn default_session_has_no_active_workspace() {
+        let s = AppState::default();
+        assert!(s.session.active_workspace.is_none());
+    }
+
+    #[test]
+    fn clone_produces_independent_copy() {
+        let mut original = AppState::default();
+        original.workspaces.create("dev".to_string());
+        let clone = original.clone();
+        assert_eq!(original.workspaces.all().len(), clone.workspaces.all().len());
+    }
+}
