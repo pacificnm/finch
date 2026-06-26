@@ -26,6 +26,20 @@ pub fn reduce(state: &mut AppState, action: AppAction) -> Vec<Effect> {
             vec![Effect::RequestRedraw]
         }
 
+        AppAction::CommandPaletteInput(c) => {
+            state.ui.command_palette.query.push(c);
+            vec![Effect::RequestRedraw]
+        }
+
+        AppAction::CommandPaletteBackspace => {
+            state.ui.command_palette.query.pop();
+            vec![Effect::RequestRedraw]
+        }
+
+        AppAction::TextInput(_) => {
+            vec![]
+        }
+
         AppAction::SwitchWorkspace(id) => {
             state.workspaces.switch(id);
             state.session.active_workspace = Some(id);
