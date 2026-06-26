@@ -18,11 +18,11 @@ An event is a typed message with metadata and an optional payload.
 
 ```rust
 pub struct Event {
-    pub id: EventId,
+    pub id: EventId,           // atomic u64 counter, cheap ordering within a session
     pub kind: EventKind,
     pub source: EventSource,
     pub priority: EventPriority,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Instant,    // monotonic — not wall clock; see docs/specs/event-bus.md
     pub payload: EventPayload,
 }
 ```
@@ -58,17 +58,22 @@ Events use priority levels to keep the UI responsive.
 
 Subscribers register interest in event kinds.
 
+Subscribers receive events through a `tokio::sync::mpsc` channel (see `docs/specs/event-bus.md` for the full subscription API). The bus delivers events by cloning into each subscriber's channel. Subscribers filter by `EventFilter` — see the spec for the filter grammar.
+
 ```rust
-pub trait EventSubscriber {
-    fn id(&self) -> SubscriberId;
-    fn subscriptions(&self) -> Vec<EventKind>;
-    async fn handle_event(&mut self, event: Event) -> Result<()>;
+// Subscription — returns a receiver for the filtered event stream
+let rx: mpsc::Receiver<Event> = bus.subscribe(
+    SubscriberId::new(),
+    EventFilter::Kind(EventKind::Input),
+);
+
+// Subscriber loop (typically inside a Tokio task)
+while let Some(event) = rx.recv().await {
+    // handle event
 }
 ```
 
-Subscriptions may be exact or category-based.
-
-Examples:
+Subscriptions may be exact or category-based. Examples:
 
 - Subscribe to all `InputEvent` events.
 - Subscribe only to `CommandEvent::Execute`.
@@ -126,8 +131,15 @@ A failing subscriber must not crash the event bus.
 - Core service errors are routed to diagnostics.
 - Repeated failures may disable a subscriber.
 
-## Open Questions
+## Resolved Decisions
 
-- Should plugins receive raw event structs or a restricted SDK wrapper?
-- Should event payloads use enums, trait objects, or serialized messages?
-- Should the event bus support cross-process plugins in the first release?
+These questions were open during initial design and have since been resolved by ADRs.
+
+**Plugins receive a restricted SDK wrapper.**
+Plugins run in-process as WASM modules (ADR-0008). The WASM host does not pass raw event structs across the ABI boundary. Instead it serializes a restricted subset of event data using MessagePack (ADR-0005) and delivers it through the plugin SDK. Plugins cannot observe or emit arbitrary internal events — only what the SDK explicitly exposes.
+
+**Event payloads use a hybrid typed enum.**
+`EventPayload` is a Rust enum with concrete variants for all known event kinds plus a `Plugin { payload: Vec<u8> }` escape hatch for plugin-originated data (ADR-0007). Core event matching is zero-cost; plugins pass opaque MessagePack blobs through the escape hatch without polluting the core event types.
+
+**Cross-process plugins are not in the first release.**
+All Phase 1 plugins execute in-process (ADR-0008). Cross-process plugin support is deferred until a separate IPC transport design is completed.

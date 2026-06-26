@@ -295,9 +295,10 @@ The initial persistence model should favor simplicity.
 Recommended persisted files:
 
 ```text
-~/.config/finch/session.toml
-~/.config/finch/workspaces/*.toml
-~/.config/finch/plugins/<plugin-id>/state.toml
+~/.local/share/finch/session.toml          # session snapshot (ADR-0013)
+~/.config/finch/workspaces/*.toml          # workspace layout files (ADR-0011)
+~/.local/share/finch/panel-state/<type>-<id>.toml  # per-panel state (ADR-0010)
+~/.local/share/finch/plugins/<plugin-id>/state.toml
 ```
 
 Sensitive information should not be persisted unless explicitly permitted by the user and supported by a secure storage strategy.
@@ -401,9 +402,12 @@ The first implementation should support:
 - Multi-session support.
 - Cloud-synchronized session state.
 
-## Open Questions
+## Resolved Decisions
 
-- What state should be considered safe to persist by default?
-- Should plugin state be stored in TOML, JSON, or plugin-defined formats?
-- Should session restoration be automatic or user-configurable?
-- How often should Finch autosave state after the MVP?
+**Session restoration is automatic by default.** Users can disable it with `--no-restore` or `session.restore_on_startup = false`. (ADR-0013)
+
+**Plugin state is stored in TOML.** Panel state files use `toml::Value`. Plugin state follows the same convention: `~/.local/share/finch/plugins/<plugin-id>/state.toml`. (ADR-0010, ADR-0004)
+
+**Safe-to-persist defaults:** Workspace layout, active workspace, panel types and their restore data (directory, scroll position, filters). Not persisted: raw terminal state, PTY handles, running process handles, secrets, scrollback buffers, expired task results.
+
+**Autosave frequency:** Autosave is not implemented in Phase 1. State is saved on clean exit and on workspace switch. Crash recovery / incremental save is deferred post-MVP.

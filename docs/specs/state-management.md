@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft v0.1
+v0.2 — Open decisions resolved. See linked ADRs for rationale.
 
 ## Purpose
 
@@ -133,14 +133,23 @@ Examples:
 Panels should expose behavior through a trait and communicate with the core using events and actions.
 
 ```rust
-pub trait Panel {
-    fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, ctx: &PanelContext);
-    fn handle_event(&mut self, event: PanelEvent, ctx: &PanelContext) -> Vec<AppAction>;
-    fn snapshot(&self) -> Option<PanelSnapshot>;
+pub trait Panel: Send + 'static {
+    fn id(&self) -> PanelId;
+    fn panel_type(&self) -> &'static str;
+    fn title(&self) -> String;
+    fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext);
+    fn handle_input(&mut self, input: InputEvent, ctx: &mut PanelContext) -> PanelAction;
+    fn on_event(&mut self, event: &Event, ctx: &mut PanelContext) -> PanelAction { PanelAction::None }
+    fn on_mounted(&mut self, ctx: &mut PanelContext) {}
+    fn on_unmounted(&mut self, ctx: &mut PanelContext) {}
+    fn on_focused(&mut self, ctx: &mut PanelContext) {}
+    fn on_blurred(&mut self, ctx: &mut PanelContext) {}
+    fn serialize_state(&self) -> Option<toml::Value> { None }
+    fn restore_state(&mut self, state: toml::Value) {}
 }
 ```
 
-Panel-local state may be serializable if the panel supports session restore. Panels that cannot restore safely can return `None` from `snapshot`.
+The full trait definition, `PanelAction` variants, and lifecycle state machine are in `docs/specs/panel-api.md` (ADR-0009). Panels return `PanelAction` rather than raw `AppAction` values so the host can validate and translate requests before applying them to `AppState`. State is serialized as `toml::Value` because panel state files are TOML (ADR-0010) — no conversion step needed.
 
 ## Actions
 
@@ -322,11 +331,23 @@ Rules:
 
 ## Dirty / Redraw State
 
-Finch should avoid constant full-screen redraws where possible.
+**ADR-0012 decision: full-frame redraws for the entire MVP phase.**
 
-Initial implementation may use full redraws for simplicity, but the state model should support dirty tracking.
+Ratatui already diffs each render against the previous buffer at the terminal cell level, so full-frame redraws do not cause visible flicker or extra terminal writes — only changed cells are written to stdout. Panel-level dirty tracking adds complexity with no meaningful user benefit in Phase 1.
 
 ```rust
+pub enum RedrawRequest {
+    None,
+    Frame,
+}
+```
+
+The state model uses a single `RedrawRequest` flag. Any event that might affect visible output sets it to `Frame`. The render pass runs and Ratatui handles the diff.
+
+Region-level dirty tracking (per-panel, per-region) may be revisited in a later phase if profiling shows the full-frame approach is a bottleneck. The `DirtyState` enum below is documented for reference but is not implemented in Phase 1.
+
+```rust
+// Reserved for future use (post-MVP)
 pub enum DirtyState {
     Clean,
     Full,
@@ -335,14 +356,6 @@ pub enum DirtyState {
     Overlay,
 }
 ```
-
-Rules:
-
-- Input events usually mark the focused panel dirty.
-- Layout changes mark the full workspace dirty.
-- Task updates mark the owning panel or status area dirty.
-- Notifications mark the notification drawer/status area dirty.
-- Theme changes mark the full UI dirty.
 
 ## Plugin State
 
@@ -491,14 +504,27 @@ Reducers should avoid direct terminal IO so unit tests can apply actions and ass
 - Add scoped plugin actions
 - Prevent plugins from mutating `AppState` directly
 
-## Open Questions
+## Resolved Decisions
 
-- Should Finch use a single `AppAction` enum or smaller domain-specific action enums?
-- Should panel state be stored as trait objects only, or should snapshots be stored separately?
-- Should dirty tracking be panel-based first or region-based from the start?
-- How much terminal scrollback should be restorable?
-- Should task state be visible globally in the taskbar by default?
-- Should plugins run in-process first, out-of-process first, or support both later?
+These questions were open during initial design. All are now closed by ADRs or architecture docs.
+
+**Single `AppAction` enum with nested domain variants.**
+A single top-level `AppAction` enum with nested variant groups (e.g., `AppAction::Plugin(PluginAction)`) keeps the reducer match exhaustive and the action surface visible in one place. Domain modules define their own sub-enums. This avoids a proliferation of separate `reduce_workspace`, `reduce_panels`, etc. dispatch functions while still keeping domain logic in separate handler modules.
+
+**Panel state is stored in separate per-panel files, not as inline snapshots.**
+`serialize_state()` returns `Option<toml::Value>`. The host serializes it to `~/.local/share/finch/panel-state/<type>-<id>.toml` on exit and reloads it by calling `restore_state()` before `on_mounted`. Panels that cannot restore safely return `None`. (ADR-0010)
+
+**Dirty tracking is not implemented in Phase 1 — full-frame redraws only.**
+Ratatui's buffer diffing makes full-frame redraws inexpensive. Region-level dirty tracking is deferred to a post-MVP phase. (ADR-0012)
+
+**Terminal scrollback is not restored across sessions.**
+Scrollback buffers (up to 10,000 lines per panel, held in memory) are large and terminal-state-sensitive. They are not included in the session snapshot. The terminal panel starts fresh after restart. The user's shell history is preserved by the shell itself.
+
+**Task state is visible in the status bar by default.**
+The status bar's right zone shows a spinner and count for active background tasks. Task results that complete with errors emit a notification. Users can open the notification drawer (`Ctrl+Shift+N`) to see all task history. (see `docs/architecture/status-bar.md`)
+
+**Plugins run in-process as WASM modules in Phase 1.**
+Out-of-process plugins are not supported in Phase 1. All plugin execution runs inside the Finch process via Wasmtime with a capability sandbox. Cross-process support is a future consideration requiring a separate IPC transport design. (ADR-0008)
 
 ## Decision
 

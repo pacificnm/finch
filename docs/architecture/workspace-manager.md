@@ -366,10 +366,13 @@ The first implementation should support:
 - Visual layout editor.
 - Workspace import and export.
 
-## Open Questions
+## Resolved Decisions
 
-- Should layouts be stored as TOML, JSON, or RON?
-- Should workspaces be global or project-scoped by default?
-- Should panel instance state live inside workspace files or separate panel state files?
-- How much layout control should plugins receive?
-- Should Finch support attachable sessions in the future?
+- **Layout format: TOML.** Workspace files are TOML (ADR-0011, ADR-0004). The schema is in `docs/specs/workspace-persistence.md`.
+- **Workspaces are global by default.** They are saved in `~/.config/finch/workspaces/`. Project-scoped workspaces are not in Phase 1.
+- **Panel state is separate from workspace files.** Panel state files live at `~/.local/share/finch/panel-state/<type>-<id>.toml` (ADR-0010). The workspace file stores panel IDs and kinds; the panel state file stores panel-internal state.
+
+## Deferred Decisions
+
+- How much layout control should plugins receive? (Phase 2 — plugin panels are placed by the user like built-in panels for now)
+- Should Finch support attachable sessions (tmux-style)? (Phase 3 at earliest)

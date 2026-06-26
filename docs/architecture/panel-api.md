@@ -98,22 +98,28 @@ Panels are not responsible for:
 ## Suggested Rust Trait
 
 ```rust
-pub trait Panel {
+pub trait Panel: Send + 'static {
     fn id(&self) -> PanelId;
-    fn panel_type(&self) -> PanelType;
+    fn panel_type(&self) -> &'static str;
     fn title(&self) -> String;
 
-    fn lifecycle(&mut self, event: PanelLifecycleEvent, ctx: &mut PanelContext) -> Result<()>;
-    fn handle_input(&mut self, input: InputEvent, ctx: &mut PanelContext) -> Result<PanelAction>;
-    fn update(&mut self, event: Event, ctx: &mut PanelContext) -> Result<PanelAction>;
-    fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext) -> Result<()>;
+    fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext);
+    fn handle_input(&mut self, input: InputEvent, ctx: &mut PanelContext) -> PanelAction;
+    fn on_event(&mut self, event: &Event, ctx: &mut PanelContext) -> PanelAction { PanelAction::None }
+    fn event_filter(&self) -> EventFilter { EventFilter::Source(EventSource::Panel(self.id())) }
 
-    fn serialize_state(&self) -> Result<Option<PanelState>>;
-    fn restore_state(&mut self, state: PanelState) -> Result<()>;
+    fn on_mounted(&mut self, ctx: &mut PanelContext) {}
+    fn on_unmounted(&mut self, ctx: &mut PanelContext) {}
+    fn on_focused(&mut self, ctx: &mut PanelContext) {}
+    fn on_blurred(&mut self, ctx: &mut PanelContext) {}
+    fn on_resized(&mut self, area: Rect, ctx: &mut PanelContext) {}
+
+    fn serialize_state(&self) -> Option<toml::Value> { None }
+    fn restore_state(&mut self, state: toml::Value) {}
 }
 ```
 
-This is an initial direction, not a frozen API. The final trait should be adjusted once the rendering pipeline and plugin model are finalized.
+This is the finalized trait (ADR-0009). The canonical definition with full documentation lives in `docs/specs/panel-api.md`. Key design decisions: all methods are synchronous (ADR-0009); state uses `toml::Value` to match panel state files (ADR-0010); lifecycle uses discrete named methods rather than a `PanelLifecycleEvent` enum for better default method support and clarity.
 
 ## Panel Lifecycle
 
@@ -130,8 +136,6 @@ Lifecycle events:
 - `Focused`
 - `Blurred`
 - `Resized`
-- `Suspended`
-- `Resumed`
 - `Unmounted`
 - `Destroyed`
 
@@ -208,9 +212,6 @@ Example actions:
 - `Command(CommandId)`
 - `Event(Event)`
 - `OpenPanel(PanelType)`
-- `CloseSelf`
-- `Notification(Notification)`
-- `RequestFocus(PanelId)`
 
 This keeps panels isolated and makes behavior easier to test.
 
@@ -304,10 +305,12 @@ The first implementation should support:
 - Panel-specific keybinding overrides.
 - Advanced mouse support.
 
-## Open Questions
+## Resolved Decisions
 
-- Should the Panel API use async traits or keep rendering/input synchronous?
-- Should plugin panels run in-process, out-of-process, or both?
-- Should panel state be stored inside workspace files or separate panel state files?
-- How should Finch handle panels that require background workers?
-- Should panel rendering be allowed to cache intermediate views?
+All design questions in this document have been resolved by ADRs:
+
+- **Sync or async trait?** — Synchronous. `render` and `handle_input` must complete within the frame budget. Long-running work is offloaded to `ctx.spawn()`. (ADR-0009)
+- **Plugin panels in-process or out-of-process?** — In-process WASM via Wasmtime in Phase 1. Cross-process support is deferred. (ADR-0008)
+- **Panel state in workspace files or separate?** — Separate per-panel files at `~/.local/share/finch/panel-state/<type>-<id>.toml`. (ADR-0010)
+- **Background workers?** — Panels use `ctx.spawn(future)` to launch Tokio tasks. Results are delivered back through the event bus as `PanelEvent`. (ADR-0009)
+- **Cached render views?** — Not in Phase 1. Full-frame redraws with Ratatui buffer diffing handle optimization at the terminal level. (ADR-0012)

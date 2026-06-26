@@ -285,10 +285,18 @@ The first implementation should support:
 - Snapshot tests for UI layouts.
 - Remote rendering experiments.
 
-## Open Questions
+## Resolved Decisions
 
-- Should Finch start with full-frame redraws only, or include dirty region tracking from the beginning?
-- Should panels render synchronously while background data loads asynchronously?
-- How should frame timing diagnostics be exposed to users?
-- Should themes be resolved before rendering or lazily during widget creation?
-- How much overlay control should plugins receive?
+- **Full-frame redraws only for Phase 1.** Ratatui's buffer diffing handles terminal-level optimization. Region-level dirty tracking adds complexity with no user-visible benefit in Phase 1. (ADR-0012)
+- **Panels render synchronously.** Background work runs in Tokio tasks and delivers results via the event bus, which triggers a redraw. `render()` itself never blocks or awaits. (ADR-0009)
+
+## Additional Resolved Decisions
+
+**Theme resolution: pre-computed palette, not lazy.**
+At the start of each render pass, the active theme is resolved once into a `Theme` struct containing concrete `ratatui::style::Color` values for every named role. All widgets receive `&Theme` — no per-widget color name lookups. This keeps widget code simple and eliminates repeated string lookups in the hot render path. On theme hot-reload, a new `Theme` is computed and a full-frame redraw is requested.
+
+**Frame timing diagnostics**: Render times are captured per panel using `std::time::Instant` before/after each `render()` call. Results are accumulated in a `RenderStats` struct owned by the render scheduler. The developer overlay (see `docs/architecture/diagnostics.md`) reads from `RenderStats` to display per-panel frame times. No changes to the render path are needed; diagnostics are a read-only view.
+
+## Deferred Decisions
+
+- How much overlay control should plugins receive? (Phase 2 — plugin panels are placed in the normal layout; floating/overlay panels are a future feature)
