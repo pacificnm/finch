@@ -55,6 +55,7 @@ pub fn reduce(state: &mut AppState, action: AppAction) -> Vec<Effect> {
 
         AppAction::CloseWorkspace(id) => {
             state.workspaces.close(id);
+            state.session.active_workspace = state.workspaces.active_id();
             vec![Effect::RequestRedraw]
         }
 
@@ -70,6 +71,7 @@ pub fn reduce(state: &mut AppState, action: AppAction) -> Vec<Effect> {
 
         AppAction::ClosePanel(panel_id) => {
             state.panels.close(panel_id);
+            state.workspaces.clear_panel_focus(panel_id);
             vec![Effect::RequestRedraw]
         }
 
@@ -319,5 +321,48 @@ mod tests {
             }),
         );
         assert!(effects.iter().any(|e| matches!(e, Effect::PluginCall(_))));
+    }
+
+    #[test]
+    fn close_active_workspace_syncs_session_active_workspace() {
+        let mut s = state();
+        reduce(&mut s, AppAction::CreateWorkspace { name: "a".to_string() });
+        let a = s.session.active_workspace.unwrap();
+        reduce(&mut s, AppAction::CreateWorkspace { name: "b".to_string() });
+        reduce(&mut s, AppAction::SwitchWorkspace(a));
+        assert_eq!(s.session.active_workspace, Some(a));
+
+        reduce(&mut s, AppAction::CloseWorkspace(a));
+
+        // session must not keep pointing at the deleted workspace
+        assert_ne!(s.session.active_workspace, Some(a));
+        assert_eq!(s.session.active_workspace, s.workspaces.active_id());
+    }
+
+    #[test]
+    fn close_focused_panel_clears_workspace_focus() {
+        let mut s = state();
+        reduce(&mut s, AppAction::CreateWorkspace { name: "dev".to_string() });
+        reduce(
+            &mut s,
+            AppAction::OpenPanel(OpenPanelRequest {
+                kind: PanelKind::Terminal,
+                workspace_id: None,
+            }),
+        );
+        let panel_id = PanelId(1);
+        reduce(&mut s, AppAction::FocusPanel(panel_id));
+        assert_eq!(
+            s.workspaces.active_workspace().unwrap().focus.focused_panel,
+            Some(panel_id)
+        );
+
+        reduce(&mut s, AppAction::ClosePanel(panel_id));
+
+        assert!(!s.panels.contains(panel_id));
+        assert_eq!(
+            s.workspaces.active_workspace().unwrap().focus.focused_panel,
+            None
+        );
     }
 }

@@ -112,7 +112,12 @@ fn map_command_palette(event: KeyEvent) -> Option<AppAction> {
     match event.key {
         Key::Escape => Some(AppAction::CloseCommandPalette),
         Key::Backspace => Some(AppAction::CommandPaletteBackspace),
-        Key::Char(c) if event.modifiers == KeyModifiers::NONE => {
+        // Accept plain chars and Shift-modified chars (uppercase letters, symbols).
+        // Crossterm reports Shift+A as Char('A') with KeyModifiers::SHIFT.
+        Key::Char(c)
+            if event.modifiers == KeyModifiers::NONE
+                || event.modifiers == KeyModifiers::SHIFT =>
+        {
             Some(AppAction::CommandPaletteInput(c))
         }
         _ => None,
@@ -121,14 +126,24 @@ fn map_command_palette(event: KeyEvent) -> Option<AppAction> {
 
 fn map_text_input(event: KeyEvent) -> Option<AppAction> {
     match event.key {
-        Key::Char(c) if event.modifiers == KeyModifiers::NONE => Some(AppAction::TextInput(c)),
+        Key::Char(c)
+            if event.modifiers == KeyModifiers::NONE
+                || event.modifiers == KeyModifiers::SHIFT =>
+        {
+            Some(AppAction::TextInput(c))
+        }
         _ => None,
     }
 }
 
 fn map_search(event: KeyEvent) -> Option<AppAction> {
     match event.key {
-        Key::Char(c) if event.modifiers == KeyModifiers::NONE => Some(AppAction::TextInput(c)),
+        Key::Char(c)
+            if event.modifiers == KeyModifiers::NONE
+                || event.modifiers == KeyModifiers::SHIFT =>
+        {
+            Some(AppAction::TextInput(c))
+        }
         _ => None,
     }
 }
@@ -301,6 +316,14 @@ mod tests {
     }
 
     #[test]
+    fn command_palette_uppercase_char_with_shift_is_accepted() {
+        assert!(matches!(
+            map_input(with_mod(Key::Char('G'), KeyModifiers::SHIFT), &InputMode::CommandPalette),
+            Some(AppAction::CommandPaletteInput('G'))
+        ));
+    }
+
+    #[test]
     fn command_palette_char_with_ctrl_returns_none() {
         assert!(
             map_input(with_mod(Key::Char('c'), KeyModifiers::CTRL), &InputMode::CommandPalette)
@@ -334,6 +357,14 @@ mod tests {
     #[test]
     fn text_input_escape_returns_none() {
         assert!(map_input(plain(Key::Escape), &InputMode::TextInput).is_none());
+    }
+
+    #[test]
+    fn text_input_uppercase_char_with_shift_is_accepted() {
+        assert!(matches!(
+            map_input(with_mod(Key::Char('S'), KeyModifiers::SHIFT), &InputMode::TextInput),
+            Some(AppAction::TextInput('S'))
+        ));
     }
 
     #[test]

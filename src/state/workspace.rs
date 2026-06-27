@@ -64,6 +64,14 @@ impl WorkspaceStore {
         }
     }
 
+    pub fn clear_panel_focus(&mut self, panel_id: PanelId) {
+        if let Some(ws) = self.active_workspace_mut() {
+            if ws.focus.focused_panel == Some(panel_id) {
+                ws.focus.release();
+            }
+        }
+    }
+
     pub fn move_focus(&mut self, direction: crate::action::FocusDirection) {
         // Spatial focus movement is resolved at render time when panel
         // layout geometry is known; the store records the intent.
