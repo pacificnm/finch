@@ -1,0 +1,37 @@
+//! Example PostgreSQL data-layer wiring for finch.
+//!
+//! Wire this into each surface host (cli/src/main.rs, tui/src/main.rs,
+//! desktop/src-tauri/src/main.rs):
+//!
+//! ```ignore
+//! use nest_data::DataModule;
+//! use nest_data_postgres::PostgresDataModule;
+//! use finch_core::data_postgres::FinchDataModule;
+//!
+//! CliApp::new("...")
+//!     .module(DataModule)
+//!     .module(PostgresDataModule::from_env("DATABASE_URL")?)
+//!     .module(FinchDataModule)
+//!     .run();
+//! ```
+
+use nest_core::{AppBuilder, Module, ModuleId, NestResult};
+use nest_data_postgres::POSTGRES_DATA_MODULE_ID;
+
+/// App-specific data module. Depends on the PostgreSQL provider.
+pub struct FinchDataModule;
+
+impl Module for FinchDataModule {
+    fn id(&self) -> ModuleId {
+        ModuleId("finch-data")
+    }
+
+    fn dependencies(&self) -> &'static [ModuleId] {
+        &[POSTGRES_DATA_MODULE_ID]
+    }
+
+    fn configure(&self, _app: &mut AppBuilder) -> NestResult<()> {
+        // Wire app-specific repositories here.
+        Ok(())
+    }
+}

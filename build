@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Nest product — multi-surface root dispatcher.
+# Usage: ./build [desktop|tui|cli|all] [build|run|dev|test|check|clean] [args...]
+# Omitting the surface defaults to desktop; omitting the command defaults to build.
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage: ./build [desktop|tui|cli|all] [command] [args...]
+
+Surfaces:
+  desktop   Tauri + React desktop app
+  tui       Ratatui terminal app
+  cli       Command-line app
+  all       Run the command against every surface
+
+Commands (same meaning everywhere):
+  build   Production build (default)
+  run     Build if needed, then launch
+  dev     Development mode
+  test    Run tests
+  check   CI-style checks
+  clean   Remove build artifacts
+
+Examples:
+  ./build desktop dev
+  ./build tui run
+  ./build cli build
+  ./build all check
+EOF
+  exit 1
+}
+
+# If no args, default to desktop build.
+if [[ $# -eq 0 ]]; then
+  set -- desktop build
+fi
+
+# If the first arg is a command (not a surface), default surface to desktop.
+surface="$1"
+if [[ "$surface" =~ ^(build|run|dev|test|check|clean)$ ]]; then
+  cmd="$surface"
+  surface="desktop"
+  shift
+elif [[ $# -ge 2 ]]; then
+  cmd="$2"
+  shift 2
+else
+  cmd="build"
+  shift
+fi
+
+run_surface() {
+  local name="$1"
+  shift
+  local dir="$APP_ROOT/$name"
+  if [[ ! -d "$dir" ]]; then
+    echo "error: surface '$name' is not part of this product" >&2
+    exit 1
+  fi
+  (cd "$dir" && ./build "$@")
+}
+
+case "$surface" in
+  desktop) run_surface desktop "$cmd" "$@" ;;
+  tui) run_surface tui "$cmd" "$@" ;;
+  cli) run_surface cli "$cmd" "$@" ;;
+  all)
+    run_surface desktop "$cmd" "$@"
+    run_surface tui "$cmd" "$@"
+    run_surface cli "$cmd" "$@"
+    ;;
+  *) usage ;;
+esac

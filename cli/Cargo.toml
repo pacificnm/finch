@@ -1,0 +1,17 @@
+[package]
+name = "finch-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[[bin]]
+name = "finch-cli"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+finch-core = { path = "../crates/core" }
+nest-cli = { workspace = true, features = ["async"] }
+nest-error = { workspace = true }
+nest-logging = { workspace = true }
+clap = "4"

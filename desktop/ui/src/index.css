@@ -1,0 +1,377 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Default theme fallbacks (cbre-light). Overridden at runtime by nest_theme_css. */
+:root {
+  --nest-color-background: #ffffff;
+  --nest-color-foreground: #1c293c;
+  --nest-color-primary: #003f2d;
+  --nest-color-secondary: #006a4d;
+  --nest-color-border: #b8bfc6;
+  --nest-color-surface: #f4f4f1;
+  --nest-color-accent: #69be28;
+  --nest-color-muted: #4a5568;
+  --nest-color-success: #006a4d;
+  --nest-color-warning: #b45309;
+  --nest-color-error: #b91c1c;
+  --nest-color-info: #003f2d;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* Rich text content — restore list markers stripped by Tailwind base. */
+.nest-rich-text ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.nest-rich-text ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+
+.nest-rich-text a {
+  color: var(--nest-color-primary);
+  text-decoration: underline;
+}
+
+/* Nest UI Browser - Component Viewer */
+.nest-ui-browser {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background-color: var(--nest-color-background);
+}
+
+.nest-ui-browser-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--nest-color-border);
+  background-color: color-mix(in srgb, var(--nest-color-surface) 60%, transparent);
+  transition: width 0.2s ease;
+}
+
+.nest-ui-browser-sidebar.open {
+  width: 260px;
+  min-width: 260px;
+}
+
+.nest-ui-browser-sidebar.closed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+.nest-ui-browser-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--nest-color-border);
+  padding: 0.75rem 1rem;
+}
+
+.nest-ui-browser-toc {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.nest-ui-browser-toc-category {
+  margin-bottom: 1rem;
+}
+
+.nest-ui-browser-toc-category-label {
+  margin-bottom: 0.5rem;
+  padding-left: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-toc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--nest-color-foreground);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--nest-radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.nest-ui-browser-toc-item:hover {
+  background-color: color-mix(in srgb, var(--nest-color-primary) 10%, transparent);
+}
+
+.nest-ui-browser-toc-item.active {
+  background-color: color-mix(in srgb, var(--nest-color-primary) 15%, transparent);
+  color: var(--nest-color-primary);
+  font-weight: 500;
+}
+
+.nest-ui-browser-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.nest-ui-browser-component-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.nest-ui-browser-component-header {
+  border-bottom: 1px solid var(--nest-color-border);
+  padding: 1.5rem 2rem;
+  background-color: color-mix(in srgb, var(--nest-color-surface) 60%, transparent);
+}
+
+.nest-ui-browser-component-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--nest-color-foreground);
+}
+
+.nest-ui-browser-component-description {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1rem;
+}
+
+.nest-ui-browser-tab {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--nest-color-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--nest-radius-md) var(--nest-radius-md) 0 0;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.nest-ui-browser-tab:hover {
+  color: var(--nest-color-foreground);
+  background-color: color-mix(in srgb, var(--nest-color-primary) 5%, transparent);
+}
+
+.nest-ui-browser-tab.active {
+  color: var(--nest-color-primary);
+  background-color: var(--nest-color-background);
+}
+
+.nest-ui-browser-component-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+}
+
+.nest-ui-browser-preview-section {
+  margin-bottom: 1.5rem;
+}
+
+.nest-ui-browser-preview-title {
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--nest-color-foreground);
+}
+
+.nest-ui-browser-preview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.nest-ui-browser-preview-grid-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.nest-ui-browser-preview-card {
+  padding: 1rem;
+  border: 1px solid var(--nest-color-border);
+  border-radius: var(--nest-radius-lg);
+  background-color: var(--nest-color-surface);
+}
+
+.nest-ui-browser-preview-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-docs {
+  max-width: 800px;
+}
+
+.nest-ui-browser-docs-section {
+  margin-bottom: 1.5rem;
+}
+
+.nest-ui-browser-docs-title {
+  margin-bottom: 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--nest-color-foreground);
+}
+
+.nest-ui-browser-docs-code {
+  padding: 1rem;
+  border: 1px solid var(--nest-color-border);
+  border-radius: var(--nest-radius-md);
+  background-color: var(--nest-color-background);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--nest-color-foreground);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.nest-ui-browser-docs-props {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nest-ui-browser-docs-prop {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--nest-color-border) 50%, transparent);
+  font-size: 0.875rem;
+}
+
+.nest-ui-browser-docs-prop:last-child {
+  border-bottom: none;
+}
+
+.nest-ui-browser-docs-prop-code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--nest-color-primary);
+}
+
+.nest-ui-browser-docs-prop-type {
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-docs-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-code {
+  max-width: 800px;
+}
+
+.nest-ui-browser-code-block {
+  padding: 1rem;
+  border: 1px solid var(--nest-color-border);
+  border-radius: var(--nest-radius-md);
+  background-color: var(--nest-color-background);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--nest-color-foreground);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.nest-ui-browser-code-hint {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-code-hint code {
+  font-family: ui-monospace, monospace;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--nest-radius-sm);
+  background-color: var(--nest-color-surface);
+  color: var(--nest-color-primary);
+}
+
+.nest-ui-browser-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--nest-color-muted);
+}
+
+.nest-ui-browser-empty-icon {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.nest-ui-browser-empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--nest-color-foreground);
+}
+
+.nest-ui-browser-empty-text {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--nest-color-muted);
+}

@@ -1,0 +1,44 @@
+//! Example HTTP-client wiring for finch.
+//!
+//! Wire this into each surface host (cli/src/main.rs, tui/src/main.rs,
+//! desktop/src-tauri/src/main.rs):
+//!
+//! ```ignore
+//! use nest_http_client::HttpClientModule;
+//! use finch_core::http_client::FinchHttpModule;
+//!
+//! CliApp::new("...")
+//!     .module(HttpClientModule::default())
+//!     .module(FinchHttpModule)
+//!     .run();
+//! ```
+//!
+//! Use the service in core code or a surface host:
+//!
+//! ```ignore
+//! use nest_http_client::HttpClientService;
+//!
+//! let http = app_context.service::<HttpClientService>()?;
+//! let data: serde_json::Value = http.get_json("https://api.example.com/v1/data").await?;
+//! ```
+
+use nest_core::{AppBuilder, Module, ModuleId, NestResult};
+use nest_http_client::HTTP_CLIENT_MODULE_ID;
+
+/// App-specific HTTP client module. Depends on the shared HTTP client provider.
+pub struct FinchHttpModule;
+
+impl Module for FinchHttpModule {
+    fn id(&self) -> ModuleId {
+        ModuleId("finch-http")
+    }
+
+    fn dependencies(&self) -> &'static [ModuleId] {
+        &[HTTP_CLIENT_MODULE_ID]
+    }
+
+    fn configure(&self, _app: &mut AppBuilder) -> NestResult<()> {
+        // Register app-specific API clients here.
+        Ok(())
+    }
+}
