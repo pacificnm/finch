@@ -1,0 +1,11 @@
+[logging]
+level = "info"
+directory = "./logs"
+
+[finch]
+# Product-specific config goes here.
+
+[database]
+# PostgreSQL connection URL. The environment variable DATABASE_URL takes precedence
+# when using PostgresDataModule::from_env.
+# url = "postgresql://finch:CHANGE_ME@server.lan:5432/finch"

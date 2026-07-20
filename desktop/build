@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Nest Tauri desktop surface — standard ./build interface.
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+NEST_ROOT=""
+dir="$APP_ROOT"
+while [[ "$dir" != "/" ]]; do
+  if [[ -f "$dir/scripts/nest-build/lib.sh" ]]; then
+    NEST_ROOT="$dir"
+    break
+  fi
+  dir="$(dirname "$dir")"
+done
+if [[ -z "$NEST_ROOT" && -f "$APP_ROOT/../nest/scripts/nest-build/lib.sh" ]]; then
+  NEST_ROOT="$(cd "$APP_ROOT/../nest" && pwd)"
+fi
+if [[ -z "$NEST_ROOT" ]]; then
+  echo "error: cannot find scripts/nest-build/lib.sh" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$NEST_ROOT/scripts/nest-build/lib.sh"
+
+export NEST_BUILD_PROFILE=tauri
+export NEST_UI_DIR=ui
+export NEST_RUST_PACKAGE="finch"
+export NEST_RUST_BIN="finch"
+export NEST_TAURI_MODE="${NEST_TAURI_MODE:-bundle}"
+
+nest_build_main "$@"

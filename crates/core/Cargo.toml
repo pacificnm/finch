@@ -1,0 +1,18 @@
+[package]
+name = "finch-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+nest-auth = { version = "0.1.0", path = "../../../../core/crates/nest-auth" }
+nest-auth-oauth-client = { version = "0.1.0", path = "../../../../modules/crates/nest-auth-oauth-client" }
+nest-data = { version = "0.1.0", path = "../../../../core/crates/nest-data", features = ["async"] }
+nest-data-postgres = { version = "0.1.0", path = "../../../../modules/crates/nest-data-postgres" }
+nest-error = { workspace = true }
+nest-http = { version = "0.1.0", path = "../../../../core/crates/nest-http" }
+nest-http-client = { version = "0.1.0", path = "../../../../core/crates/nest-http-client" }
+nest-schwab = { version = "0.1.0", path = "../../../../modules/crates/nest-schwab" }
+nest-version = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

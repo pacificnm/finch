@@ -1,0 +1,17 @@
+[package]
+name = "finch-tui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[[bin]]
+name = "finch-tui"
+path = "src/main.rs"
+
+[dependencies]
+finch-core = { path = "../crates/core" }
+nest-error = { workspace = true }
+nest-logging = { workspace = true }
+nest-tui = { workspace = true }
+crossterm = { workspace = true }
+ratatui = { workspace = true }

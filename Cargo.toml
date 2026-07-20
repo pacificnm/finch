@@ -1,4 +1,28 @@
-[package]
-name = "finch"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "crates/core",
+    "cli",
+    "tui",
+    "desktop/src-tauri",
+]
+resolver = "2"
+
+[workspace.dependencies]
+nest-cache = { path = "../../core/crates/nest-cache" }
+nest-cache-file = { path = "../../modules/crates/nest-cache-file" }
+nest-cli = { path = "../../core/crates/nest-cli" }
+nest-cli-command = { path = "../../core/crates/nest-cli-command" }
+nest-error = { path = "../../core/crates/nest-error" }
+nest-image = { path = "../../core/crates/nest-image" }
+nest-logging = { path = "../../core/crates/nest-logging" }
+nest-tauri = { path = "../../core/crates/nest-tauri" }
+nest-theme = { path = "../../core/crates/nest-theme" }
+nest-tui = { path = "../../core/crates/nest-tui" }
+nest-version = { path = "../../core/crates/nest-version" }
+clap = "4"
+crossterm = "0.28"
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["custom-protocol"] }
+tauri-build = { version = "2", features = [] }

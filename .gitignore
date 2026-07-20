@@ -1,0 +1,7 @@
+target/
+/Cargo.lock
+logs/
+node_modules/
+dist/
+*.tsbuildinfo
+/finch-cli

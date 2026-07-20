@@ -1,0 +1,18 @@
+[package]
+name = "finch"
+version = "0.1.0"
+description = "Finch desktop app (Tauri + React)"
+edition = "2021"
+rust-version = "1.75"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+finch-core = { path = "../../crates/core" }
+nest-cache = { workspace = true }
+nest-cache-file = { workspace = true }
+nest-image = { workspace = true }
+nest-tauri = { workspace = true, features = ["runtime", "images"] }
+nest-theme = { workspace = true }
+tauri = { workspace = true }
