@@ -12,6 +12,11 @@ export type ThemeCss = {
   root_block: string;
 };
 
+export type ThemeSummary = {
+  id: string;
+  mode: string;
+};
+
 export type ImageFetchResponse = {
   bytes_base64: string;
   mime: string;
@@ -34,6 +39,14 @@ export async function fetchAppMetadata(): Promise<AppMetadata> {
 
 export async function fetchThemeCss(): Promise<ThemeCss> {
   return invoke<ThemeCss>("nest_theme_css");
+}
+
+export async function listThemes(): Promise<ThemeSummary[]> {
+  return invoke<ThemeSummary[]>("nest_theme_list");
+}
+
+export async function setActiveTheme(id: string): Promise<ThemeCss> {
+  return invoke<ThemeCss>("nest_theme_set_active", { request: { id } });
 }
 
 export async function fetchImage(
