@@ -12,7 +12,7 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_"],
   resolve: {
     alias: {
-      "@nest/components": path.resolve(__dirname, "../../../core/crates/nest-react-components/src"),
+      "@nest/components": path.resolve(__dirname, "../../../../core/crates/nest-react-components/src"),
     },
     dedupe: ["clsx", "tailwind-merge", "lucide-react", "react", "react-dom"],
   },

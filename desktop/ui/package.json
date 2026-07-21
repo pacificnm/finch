@@ -17,9 +17,11 @@
     "@fortawesome/free-regular-svg-icons": "^7.3.0",
     "@fortawesome/free-solid-svg-icons": "^7.3.0",
     "@fortawesome/react-fontawesome": "^3.3.1",
-    "@nest/components": "../../../core/crates/nest-react-components",
+    "@nest/components": "../../../../core/crates/nest-react-components",
     "@tauri-apps/api": "^2.4.0",
     "clsx": "^2.1.1",
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwind-merge": "^3.6.0"
