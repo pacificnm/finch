@@ -12,6 +12,8 @@ tauri-build = { workspace = true }
 finch-core = { path = "../../crates/core" }
 nest-cache = { workspace = true }
 nest-cache-file = { workspace = true }
+nest-data = { version = "0.1.0", path = "../../../../core/crates/nest-data" }
+nest-data-postgres = { version = "0.1.0", path = "../../../../modules/crates/nest-data-postgres" }
 nest-image = { workspace = true }
 nest-tauri = { workspace = true, features = ["runtime", "images"] }
 nest-theme = { workspace = true }

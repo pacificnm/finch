@@ -7,6 +7,7 @@ rust-version = "1.75"
 [dependencies]
 nest-auth = { version = "0.1.0", path = "../../../../core/crates/nest-auth" }
 nest-auth-oauth-client = { version = "0.1.0", path = "../../../../modules/crates/nest-auth-oauth-client" }
+nest-core = { version = "0.1.0", path = "../../../../core/crates/nest-core" }
 nest-data = { version = "0.1.0", path = "../../../../core/crates/nest-data", features = ["async"] }
 nest-data-postgres = { version = "0.1.0", path = "../../../../modules/crates/nest-data-postgres" }
 nest-error = { workspace = true }
@@ -16,3 +17,8 @@ nest-schwab = { version = "0.1.0", path = "../../../../modules/crates/nest-schwa
 nest-version = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { version = "0.9", features = ["runtime-tokio", "postgres", "chrono", "json"] }
+chrono = "0.4"
+urlencoding = "2"
+once_cell = "1"
+oauth2 = "4"

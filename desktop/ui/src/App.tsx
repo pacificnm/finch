@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
+import { LoginScreen } from "./components/LoginScreen";
 import { TradingWorkspace } from "./components/trading/TradingWorkspace";
 import { AppShell, useStatusBar, useToast } from "./shell";
 import {
@@ -8,6 +9,7 @@ import {
   fetchThemeCss,
   listThemes,
   runCli,
+  schwabAuthStatus,
   setActiveTheme,
   type AppMetadata,
   type ThemeSummary,
@@ -20,8 +22,19 @@ export function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
   const [activeThemeId, setActiveThemeId] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<"checking" | "logged-in" | "logged-out">("checking");
   const toast = useToast();
   const { setStatus } = useStatusBar();
+
+  const checkAuth = async () => {
+    try {
+      const status = await schwabAuthStatus();
+      setAuthStatus(status.startsWith("Logged in") ? "logged-in" : "logged-out");
+    } catch (error: unknown) {
+      setAuthStatus("logged-out");
+      toast.error(`Failed to check Schwab auth status: ${String(error)}`);
+    }
+  };
 
   useEffect(() => {
     void (async () => {
@@ -34,6 +47,8 @@ export function App() {
         toast.error(`Failed to load app metadata: ${String(error)}`);
       }
     })();
+
+    void checkAuth();
 
     void (async () => {
       try {
@@ -73,7 +88,6 @@ export function App() {
     <AppShell
       titleBar={
         <TitleBar
-          title={appTitle}
           themes={themes}
           activeThemeId={activeThemeId}
           onSelectTheme={handleSelectTheme}
@@ -97,7 +111,15 @@ export function App() {
       statusLeft={<span>Ready</span>}
       statusRight={<span>{metadata?.name ?? "…"}</span>}
     >
-      <TradingWorkspace />
+      {authStatus === "checking" ? (
+        <div className="flex h-full items-center justify-center text-nest-muted">
+          Checking login status…
+        </div>
+      ) : authStatus === "logged-out" ? (
+        <LoginScreen onLoggedIn={() => setAuthStatus("logged-in")} />
+      ) : (
+        <TradingWorkspace />
+      )}
     </AppShell>
   );
 }

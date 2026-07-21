@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Select, type SelectOption } from "@nest/components";
-import { Bell, ChevronDown, LayoutGrid, Plus } from "lucide-react";
+import { Bell, Plus } from "lucide-react";
 import { CandlestickChart, type ActiveStudies } from "./CandlestickChart";
 import { StudiesDialog } from "./StudiesDialog";
 import { ChartSettingsDialog } from "./ChartSettingsDialog";
+import { QuoteDetails } from "./QuoteDetails";
+import { OptionChain } from "./OptionChain";
+import { TradesTable } from "./TradesTable";
+import { OrderTicket } from "./OrderTicket";
 import {
   getDefaultIntervalForPeriod,
   getIntervalOptionsForPeriod,
@@ -16,9 +20,9 @@ const MOCK_NAME = "Schwab US Large-Cap Growth ETF";
 
 const MOCK_BID_ASK = {
   bid: 34.12,
-  ask: 34.23,
-  bidSize: "200",
-  askSize: "3K",
+  ask: 34.17,
+  bidSize: "2.3K",
+  askSize: "3.9K",
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -38,10 +42,17 @@ const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
   { value: "max", label: "Max", days: 7300 },
 ];
 
+const HEADER_TABS = [
+  { value: "quote", label: "Quote Details" },
+  { value: "analyst", label: "Analyst Reports" },
+  { value: "fundamentals", label: "Fundamentals" },
+  { value: "optionStats", label: "Option Stats" },
+];
+
 const DEFAULT_STUDIES: ActiveStudies = { volume: false, movingAverage: false, rsi: false };
 
-/** Charts section: symbol header, chart toolbar, and the candlestick chart. */
-export function ChartsScreen() {
+export function TradeScreen() {
+  const [activeHeaderTab, setActiveHeaderTab] = useState("quote");
   const [period, setPeriod] = useState("1y");
   const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
@@ -78,8 +89,8 @@ export function ChartsScreen() {
   };
 
   return (
-    <div className="flex h-full flex-col p-4">
-      <div className="mb-3 flex items-start justify-between">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
+      <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold">{MOCK_SYMBOL}</h1>
           <p className="text-[12px] text-nest-muted">{MOCK_NAME}</p>
@@ -91,7 +102,6 @@ export function ChartsScreen() {
             >
               <Plus className="size-3" />
               <span>Add to Watchlist</span>
-              <ChevronDown className="size-3" />
             </button>
             <button
               type="button"
@@ -100,15 +110,6 @@ export function ChartsScreen() {
             >
               <Bell className="size-3" />
               <span>Create Alert</span>
-            </button>
-            <button
-              type="button"
-              className="flex items-center gap-1 hover:text-nest-foreground"
-              title="Grid"
-            >
-              <LayoutGrid className="size-3" />
-              <span>Grid</span>
-              <ChevronDown className="size-3" />
             </button>
           </div>
         </div>
@@ -150,44 +151,80 @@ export function ChartsScreen() {
         ) : null}
       </div>
 
-      <div className="mb-3 flex items-center gap-4 border-b border-nest-border pb-2 text-[12px] text-nest-muted">
-        <button
-          type="button"
-          onClick={() => setStudiesOpen(true)}
-          className="hover:text-nest-foreground"
-        >
-          Studies
-        </button>
-        <button type="button" className="cursor-not-allowed opacity-50" title="Not implemented yet">
-          Drawings
-        </button>
-        <span className="flex-1" />
-        <Select
-          value={period}
-          onChange={setPeriod}
-          options={PERIOD_OPTIONS}
-          size="small"
-          className="!w-fit shrink-0"
-        />
-        <Select
-          value={aggregation}
-          onChange={setAggregation}
-          options={intervalOptions}
-          size="small"
-          className="!w-fit shrink-0"
-        />
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="hover:text-nest-foreground"
-        >
-          Settings
-        </button>
+      <div className="flex items-center gap-1 border-b border-nest-border pb-2 text-[12px]">
+        {HEADER_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => setActiveHeaderTab(tab.value)}
+            className={`rounded-nest-md px-3 py-1.5 font-medium ${
+              activeHeaderTab === tab.value
+                ? "bg-nest-muted/20 text-nest-foreground"
+                : "text-nest-muted hover:text-nest-foreground"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="min-h-0 flex-1 rounded-nest-md border border-nest-border">
-        <CandlestickChart data={candles} studies={studies} />
+      {activeHeaderTab === "quote" ? (
+        <>
+          <QuoteDetails />
+          <OptionChain />
+          <TradesTable />
+        </>
+      ) : (
+        <div className="flex h-32 items-center justify-center rounded-nest-md border border-nest-border text-[12px] text-nest-muted">
+          {HEADER_TABS.find((tab) => tab.value === activeHeaderTab)?.label} coming next.
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col rounded-nest-md border border-nest-border">
+        <div className="flex items-center gap-4 border-b border-nest-border px-3 py-2 text-[12px] text-nest-muted">
+          <button
+            type="button"
+            onClick={() => setStudiesOpen(true)}
+            className="hover:text-nest-foreground"
+          >
+            Studies
+          </button>
+          <button
+            type="button"
+            className="cursor-not-allowed opacity-50"
+            title="Not implemented yet"
+          >
+            Drawings
+          </button>
+          <span className="flex-1" />
+          <Select
+            value={period}
+            onChange={setPeriod}
+            options={PERIOD_OPTIONS}
+            size="small"
+            className="!w-fit shrink-0"
+          />
+          <Select
+            value={aggregation}
+            onChange={setAggregation}
+            options={intervalOptions}
+            size="small"
+            className="!w-fit shrink-0"
+          />
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="hover:text-nest-foreground"
+          >
+            Settings
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <CandlestickChart data={candles} studies={studies} />
+        </div>
       </div>
+
+      <OrderTicket symbol={MOCK_SYMBOL} />
 
       <StudiesDialog
         open={studiesOpen}

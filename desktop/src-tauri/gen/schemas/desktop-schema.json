@@ -2193,10 +2193,10 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`",
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-settings-get`\n- `allow-settings-set`",
           "type": "string",
           "const": "finch:default",
-          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`"
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-settings-get`\n- `allow-settings-set`"
         },
         {
           "description": "Enables the run_cli command without any pre-configured scope.",
@@ -2205,10 +2205,118 @@
           "markdownDescription": "Enables the run_cli command without any pre-configured scope."
         },
         {
+          "description": "Enables the schwab_account_summary command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-account-summary",
+          "markdownDescription": "Enables the schwab_account_summary command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_accounts command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-accounts",
+          "markdownDescription": "Enables the schwab_accounts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_auth_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-auth-begin",
+          "markdownDescription": "Enables the schwab_auth_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_auth_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-auth-complete",
+          "markdownDescription": "Enables the schwab_auth_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_auth_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-auth-status",
+          "markdownDescription": "Enables the schwab_auth_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_orders command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-orders",
+          "markdownDescription": "Enables the schwab_orders command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-positions",
+          "markdownDescription": "Enables the schwab_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the settings_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-settings-get",
+          "markdownDescription": "Enables the settings_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the settings_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-settings-set",
+          "markdownDescription": "Enables the settings_set command without any pre-configured scope."
+        },
+        {
           "description": "Denies the run_cli command without any pre-configured scope.",
           "type": "string",
           "const": "finch:deny-run-cli",
           "markdownDescription": "Denies the run_cli command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_account_summary command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-account-summary",
+          "markdownDescription": "Denies the schwab_account_summary command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_accounts command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-accounts",
+          "markdownDescription": "Denies the schwab_accounts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_auth_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-auth-begin",
+          "markdownDescription": "Denies the schwab_auth_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_auth_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-auth-complete",
+          "markdownDescription": "Denies the schwab_auth_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_auth_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-auth-status",
+          "markdownDescription": "Denies the schwab_auth_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_orders command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-orders",
+          "markdownDescription": "Denies the schwab_orders command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-positions",
+          "markdownDescription": "Denies the schwab_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the settings_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-settings-get",
+          "markdownDescription": "Denies the settings_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the settings_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-settings-set",
+          "markdownDescription": "Denies the settings_set command without any pre-configured scope."
         }
       ]
     },

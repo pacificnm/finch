@@ -9,7 +9,18 @@ fn main() {
         tauri_build::Attributes::new().plugin(
             "finch",
             tauri_build::InlinedPlugin::new()
-                .commands(&["run_cli"])
+                .commands(&[
+                    "run_cli",
+                    "schwab_auth_begin",
+                    "schwab_auth_complete",
+                    "schwab_auth_status",
+                    "schwab_accounts",
+                    "schwab_account_summary",
+                    "schwab_orders",
+                    "schwab_positions",
+                    "settings_get",
+                    "settings_set",
+                ])
                 .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
         ),
     )

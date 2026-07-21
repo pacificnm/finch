@@ -102,7 +102,11 @@ fn opt(name: &'static str, long: &'static str) -> Arg {
 impl SchwabCommand {
     fn configure_auth(cmd: Command) -> Command {
         cmd.subcommand_required(true)
-            .subcommand(Command::new("login").about("Run the interactive Schwab OAuth login"))
+            .subcommand(
+                Command::new("login")
+                    .about("Run the interactive Schwab OAuth login")
+                    .arg(Arg::new("manual").long("manual").num_args(0).help("Paste the authorization code manually instead of using the local HTTPS callback")),
+            )
             .subcommand(Command::new("logout").about("Remove the stored Schwab token"))
             .subcommand(Command::new("status").about("Show whether a Schwab token is stored"))
     }
@@ -254,11 +258,17 @@ async fn run_schwab(matches: &ArgMatches) -> Result<String, String> {
 
     match name {
         "auth" => {
-            let (auth_name, _) = sub
+            let (auth_name, auth_sub) = sub
                 .subcommand()
                 .ok_or_else(|| "missing `schwab auth` subcommand".to_string())?;
             match auth_name {
-                "login" => schwab::auth_login().await,
+                "login" => {
+                    if auth_sub.get_flag("manual") {
+                        schwab::auth_login_manual().await
+                    } else {
+                        schwab::auth_login().await
+                    }
+                }
                 "logout" => schwab::auth_logout().await,
                 "status" => schwab::auth_status().await,
                 other => Err(format!("unknown `schwab auth` subcommand: {other}")),

@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod data_postgres;
 pub mod schwab;
+pub mod settings;
 
 /// Commands shared across all product surfaces.
 #[derive(Debug, Serialize, Deserialize)]

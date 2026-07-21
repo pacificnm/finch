@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Search } from "lucide-react";
 import { WindowControls } from "./WindowControls";
 import { isTauri } from "../lib/tauri";
 import type { ThemeSummary } from "../lib/nest";
@@ -7,8 +8,6 @@ type TitleBarMenu = "file" | "developer" | "help" | null;
 type FileSubmenu = "theme" | null;
 
 type TitleBarProps = {
-  /** Centered window title (usually the app's display name). */
-  title: string;
   /** File → Quit. */
   onQuit: () => void;
   /** Developer → Show loaded recipes. */
@@ -46,7 +45,6 @@ function formatThemeLabel(id: string): string {
  * controls. Pairs with `"decorations": false` in `tauri.conf.json`.
  */
 export function TitleBar({
-  title,
   onQuit,
   onShowRecipes,
   onAbout,
@@ -100,7 +98,7 @@ export function TitleBar({
 
   return (
     <header className="relative flex h-8 shrink-0 items-stretch border-b border-nest-border bg-nest-surface text-[13px]">
-      <div className="relative z-10 flex h-full shrink-0 items-stretch pl-2" data-titlebar-menu>
+      <div className="relative z-10 flex h-full shrink-0 items-center gap-2 pl-2" data-titlebar-menu>
         <MenuDropdown label="File" open={openMenu === "file"} onToggle={() => toggleMenu("file")}>
           {themes.length > 0 ? (
             <MenuSubmenu
@@ -155,24 +153,26 @@ export function TitleBar({
             }}
           />
         </MenuDropdown>
+
+        <SymbolSearch />
       </div>
 
       {showWindowChrome ? (
-        <div className="min-w-0 flex-1" data-tauri-drag-region />
+        <div
+          className="flex min-w-0 flex-1 items-center justify-center"
+          data-tauri-drag-region
+        >
+          <MarketIndex />
+        </div>
       ) : (
-        <div className="min-w-0 flex-1" />
+        <div className="flex min-w-0 flex-1 items-center justify-center">
+          <MarketIndex />
+        </div>
       )}
 
       <div className="relative z-10 flex h-full shrink-0 items-stretch">
         {showWindowChrome ? <WindowControls /> : null}
       </div>
-
-      <p
-        className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center px-28"
-        aria-hidden
-      >
-        <span className="truncate text-[12px] font-medium text-nest-foreground">{title}</span>
-      </p>
     </header>
   );
 }
@@ -282,5 +282,27 @@ function MenuRadioItem({
       <span>{label}</span>
       {checked ? <span aria-hidden>{"✓"}</span> : null}
     </button>
+  );
+}
+
+function SymbolSearch() {
+  return (
+    <div className="flex h-6 items-center gap-1.5 rounded-nest-md border border-nest-border bg-nest-background px-2 text-[11px]">
+      <Search className="size-3 text-nest-muted" />
+      <input
+        type="text"
+        placeholder="Find a Symbol"
+        className="w-28 bg-transparent text-nest-foreground placeholder:text-nest-muted focus:outline-none"
+      />
+    </div>
+  );
+}
+
+function MarketIndex() {
+  return (
+    <div className="text-center text-[11px] leading-tight">
+      <p className="font-medium text-nest-error">$DJI 51,839.26</p>
+      <p className="text-nest-error">-307.16 (-0.59%)</p>
+    </div>
   );
 }

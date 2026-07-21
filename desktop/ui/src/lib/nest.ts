@@ -71,6 +71,95 @@ export async function runCli(command: CliCommand): Promise<string> {
   return invoke<string>("plugin:finch|run_cli", { command });
 }
 
+export async function schwabAuthBegin(): Promise<string> {
+  return invoke<string>("plugin:finch|schwab_auth_begin");
+}
+
+export async function schwabAuthComplete(code: string, state: string): Promise<string> {
+  return invoke<string>("plugin:finch|schwab_auth_complete", { code, state });
+}
+
+export async function schwabAuthStatus(): Promise<string> {
+  return invoke<string>("plugin:finch|schwab_auth_status");
+}
+
+export type SchwabAccount = {
+  account_number: string;
+  hash: string;
+  nickname?: string;
+  display_account_id?: string;
+  account_type?: string;
+  primary_account: boolean;
+  account_color?: string;
+};
+
+export type SchwabAccountSummary = {
+  account_value: string;
+  buying_power: string;
+  cash_for_withdrawal: string;
+  pl_day_percent: string;
+};
+
+export type SchwabOrderRow = {
+  order_id: string;
+  time: string;
+  side: string;
+  pos_effect: string;
+  qty: string;
+  amount: string;
+  symbol: string;
+  desc: string;
+  price: string;
+  tif: string;
+  mark: string;
+  net_prc: string;
+  status: string;
+};
+
+export type SchwabPositionRow = {
+  position: string;
+  qty: string;
+  pl_day: string;
+  pl_open: string;
+  pl_ytd: string;
+  cost: string;
+  net_liq: string;
+  trade_price: string;
+  bp_effect: string;
+  delta: string;
+  gamma: string;
+  theta: string;
+  vega: string;
+};
+
+export async function fetchSchwabAccounts(): Promise<SchwabAccount[]> {
+  return invoke<SchwabAccount[]>("plugin:finch|schwab_accounts");
+}
+
+export async function fetchSchwabAccountSummary(
+  accountHash: string,
+): Promise<SchwabAccountSummary> {
+  return invoke<SchwabAccountSummary>("plugin:finch|schwab_account_summary", {
+    accountHash,
+  });
+}
+
+export async function fetchSchwabOrders(
+  accountHash: string,
+): Promise<SchwabOrderRow[]> {
+  return invoke<SchwabOrderRow[]>("plugin:finch|schwab_orders", {
+    accountHash,
+  });
+}
+
+export async function fetchSchwabPositions(
+  accountHash: string,
+): Promise<SchwabPositionRow[]> {
+  return invoke<SchwabPositionRow[]>("plugin:finch|schwab_positions", {
+    accountHash,
+  });
+}
+
 export function applyThemeRootBlock(rootBlock: string): void {
   let style = document.getElementById("nest-theme-vars");
   if (!style) {
