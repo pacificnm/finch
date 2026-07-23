@@ -8,4 +8,4 @@ directory = "./logs"
 [database]
 # PostgreSQL connection URL. The environment variable DATABASE_URL takes precedence
 # when using PostgresDataModule::from_env.
-url = "postgresql://postgres:11akers32@192.168.88.10/finch"
+url = "postgresql://postgres:postgres@192.168.88.10/finch"
