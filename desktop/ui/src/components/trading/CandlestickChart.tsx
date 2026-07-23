@@ -68,7 +68,11 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
         horzLines: { color: borderColor },
       },
       rightPriceScale: { borderColor },
-      timeScale: { borderColor },
+      timeScale: {
+        borderColor,
+        timeVisible: true,
+        secondsVisible: false,
+      },
     });
     chartRef.current = chart;
 

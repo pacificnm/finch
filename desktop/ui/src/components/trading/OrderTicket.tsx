@@ -1,18 +1,60 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Minus, Plus, X } from "lucide-react";
+
+export type TradeSetup = {
+  symbol: string;
+  entry: number;
+  stop: number;
+  target: number;
+  shares: number;
+  risk: number;
+  reward: number;
+};
 
 export type OrderTicketProps = {
   symbol: string;
   defaultQuantity?: number;
   defaultPrice?: string;
+  tradeSetup?: TradeSetup | null;
+  onClearTradeSetup?: () => void;
 };
 
-export function OrderTicket({ symbol, defaultQuantity = 1, defaultPrice = "34.17" }: OrderTicketProps) {
+export function OrderTicket({
+  symbol,
+  defaultQuantity = 1,
+  defaultPrice = "34.17",
+  tradeSetup,
+  onClearTradeSetup,
+}: OrderTicketProps) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [quantity, setQuantity] = useState(defaultQuantity);
   const [price, setPrice] = useState(defaultPrice);
   const [orderType, setOrderType] = useState("LIMIT");
   const [tif, setTif] = useState("Day");
+  const [bracketEnabled, setBracketEnabled] = useState(false);
+  const [stopPrice, setStopPrice] = useState("");
+  const [targetPrice, setTargetPrice] = useState("");
+
+  // Populate form when AI provides a trade setup.
+  useEffect(() => {
+    if (!tradeSetup) return;
+
+    setSide("buy");
+    setQuantity(tradeSetup.shares);
+    setPrice(tradeSetup.entry.toFixed(2));
+    setOrderType("LIMIT");
+    setTif("Day");
+    setBracketEnabled(true);
+    setStopPrice(tradeSetup.stop.toFixed(2));
+    setTargetPrice(tradeSetup.target.toFixed(2));
+  }, [tradeSetup]);
+
+  const clearSetup = () => {
+    setBracketEnabled(false);
+    setStopPrice("");
+    setTargetPrice("");
+    onClearTradeSetup?.();
+  };
 
   return (
     <div className="rounded-nest-md border border-nest-border bg-nest-surface">
@@ -35,6 +77,21 @@ export function OrderTicket({ symbol, defaultQuantity = 1, defaultPrice = "34.17
       </div>
 
       <div className="space-y-3 p-3">
+        {tradeSetup && (
+          <div className="flex items-center justify-between rounded-nest-md bg-nest-primary/10 px-3 py-2 text-[11px]">
+            <span className="text-nest-primary">
+              AI setup: {tradeSetup.shares} shares @ ${tradeSetup.entry.toFixed(2)} | Stop ${tradeSetup.stop.toFixed(2)} | Target ${tradeSetup.target.toFixed(2)}
+            </span>
+            <button
+              type="button"
+              onClick={clearSetup}
+              className="text-nest-muted hover:text-nest-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <div className="flex overflow-hidden rounded-nest-md border border-nest-border text-[12px] font-medium">
             <button
@@ -140,7 +197,65 @@ export function OrderTicket({ symbol, defaultQuantity = 1, defaultPrice = "34.17
           </div>
         </div>
 
+        {bracketEnabled && (
+          <div className="grid grid-cols-2 gap-3 rounded-nest-md border border-nest-border bg-nest-background p-3 text-[11px]">
+            <div className="space-y-1">
+              <span className="text-nest-muted">Stop Loss</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setStopPrice((current) => (parseFloat(current || "0") - 0.01).toFixed(2))}
+                  className="rounded-nest-md border border-nest-border p-1 hover:bg-nest-muted/10"
+                >
+                  <Minus className="size-3" />
+                </button>
+                <input
+                  type="text"
+                  value={stopPrice}
+                  onChange={(e) => setStopPrice(e.target.value)}
+                  className="w-full rounded-nest-md border border-nest-border bg-nest-surface px-2 py-1 text-center text-[12px] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setStopPrice((current) => (parseFloat(current || "0") + 0.01).toFixed(2))}
+                  className="rounded-nest-md border border-nest-border p-1 hover:bg-nest-muted/10"
+                >
+                  <Plus className="size-3" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-nest-muted">Target</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setTargetPrice((current) => (parseFloat(current || "0") - 0.01).toFixed(2))}
+                  className="rounded-nest-md border border-nest-border p-1 hover:bg-nest-muted/10"
+                >
+                  <Minus className="size-3" />
+                </button>
+                <input
+                  type="text"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(e.target.value)}
+                  className="w-full rounded-nest-md border border-nest-border bg-nest-surface px-2 py-1 text-center text-[12px] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTargetPrice((current) => (parseFloat(current || "0") + 0.01).toFixed(2))}
+                  className="rounded-nest-md border border-nest-border p-1 hover:bg-nest-muted/10"
+                >
+                  <Plus className="size-3" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 text-[11px]">
+          <OrderTicketButton onClick={() => setBracketEnabled((v) => !v)} active={bracketEnabled}>
+            Bracket / OCO
+          </OrderTicketButton>
           <OrderTicketButton>Option Leg</OrderTicketButton>
           <OrderTicketButton>Order Rule</OrderTicketButton>
         </div>
@@ -183,11 +298,20 @@ export function OrderTicket({ symbol, defaultQuantity = 1, defaultPrice = "34.17
   );
 }
 
-function OrderTicketButton({ children }: { children: React.ReactNode }) {
+type OrderTicketButtonProps = {
+  children: React.ReactNode;
+  onClick?: () => void;
+  active?: boolean;
+};
+
+function OrderTicketButton({ children, onClick, active }: OrderTicketButtonProps) {
   return (
     <button
       type="button"
-      className="flex items-center gap-1 rounded-nest-md border border-nest-border px-2 py-1 text-nest-foreground hover:bg-nest-muted/10"
+      onClick={onClick}
+      className={`flex items-center gap-1 rounded-nest-md border border-nest-border px-2 py-1 text-nest-foreground hover:bg-nest-muted/10 ${
+        active ? "bg-nest-primary/10 text-nest-primary border-nest-primary" : ""
+      }`}
     >
       <span className="text-nest-primary">+</span>
       {children}

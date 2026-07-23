@@ -8,6 +8,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    headers: {
+      "Cache-Control": "no-store",
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
   resolve: {

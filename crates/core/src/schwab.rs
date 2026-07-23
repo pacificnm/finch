@@ -173,6 +173,40 @@ pub async fn auth_begin() -> Result<String, String> {
     Ok(url.to_string())
 }
 
+/// The redirect URI Schwab will send the browser back to once login
+/// completes (e.g. `https://127.0.0.1:8443`).
+pub fn redirect_uri_prefix() -> Result<String, String> {
+    Ok(schwab_config()?.redirect_uri())
+}
+
+/// UI-driven equivalent of [`auth_login`]/`auth_login_inner`'s non-manual
+/// path: generates the authorization URL, hands it to `on_url` (so the
+/// caller can open it in the system browser — Schwab rejects logins
+/// attempted inside an embedded webview), then waits on the local HTTPS
+/// loopback listener for the redirect and completes the token exchange
+/// automatically. No code copy/paste required; the only user-visible
+/// friction is the browser's one-time self-signed certificate warning on
+/// the `127.0.0.1` redirect.
+pub async fn auth_login_loopback<F>(on_url: F) -> Result<String, String>
+where
+    F: FnOnce(String) + Send,
+{
+    let config = schwab_config()?;
+    let oauth_client =
+        OAuthClient::new(&config.to_oauth_client_config()).map_err(|err| err.to_string())?;
+    let request = oauth_client.authorization_request();
+    on_url(request.url.to_string());
+    let token = oauth_client
+        .complete_login(request, LOGIN_TIMEOUT)
+        .await
+        .map_err(|err| err.to_string())?;
+    token_store()?
+        .put(TOKEN_KEY, &token)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok("Login succeeded, token stored.".to_string())
+}
+
 /// Completes a UI-driven OAuth login: exchanges the authorization code for a
 /// token using the verifier stored by [`auth_begin`].
 pub async fn auth_complete(code: &str, state: &str) -> Result<String, String> {
@@ -231,13 +265,41 @@ pub async fn auth_status() -> Result<String, String> {
     }
 }
 
+async fn oauth_client() -> Result<OAuthClient, String> {
+    let config = schwab_config()?;
+    OAuthClient::new(&config.to_oauth_client_config()).map_err(|err| err.to_string())
+}
+
 async fn client() -> Result<SchwabClient, String> {
     let config = schwab_config()?;
-    let token = token_store()?
+    let store = token_store()?;
+    let mut token = store
         .get(TOKEN_KEY)
         .await
         .map_err(|err| err.to_string())?
         .ok_or_else(|| "not logged in — run `schwab auth login` first".to_string())?;
+
+    // Refresh the access token if it has expired and a refresh token is available.
+    if token.is_expired(now_ms()) {
+        if let Some(refresh_token) = token.refresh_token.clone() {
+            match oauth_client().await?.refresh(&refresh_token).await {
+                Ok(new_token) => {
+                    if let Err(err) = store.put(TOKEN_KEY, &new_token).await {
+                        eprintln!("[schwab] failed to persist refreshed token: {err}");
+                    }
+                    token = new_token;
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "Schwab token expired and refresh failed: {err}. Run `schwab auth login`."
+                    ));
+                }
+            }
+        } else {
+            return Err("Schwab token expired and no refresh token is available. Run `schwab auth login`.".to_string());
+        }
+    }
+
     let auth = OAuthTokenAuth::new(token);
     SchwabClient::new(&config, auth).map_err(|err| err.to_string())
 }
@@ -740,7 +802,19 @@ fn parse_positions(value: &Value) -> Vec<PositionRow> {
         .cloned()
         .unwrap_or_default();
 
-    let mut rows = Vec::with_capacity(items.len().saturating_add(1));
+    let mut rows = Vec::with_capacity(items.len().saturating_add(2));
+
+    // Running sums for the synthetic Totals row appended below. Only
+    // fields with real per-row numeric data get summed (pl_day, pl_open,
+    // cost, net_liq, bp_effect) — qty/pl_ytd/greeks stay "—" in the total,
+    // same as thinkorswim, since summing quantities across different
+    // symbols isn't meaningful and pl_ytd/greeks aren't populated per-row
+    // yet (nothing to honestly sum).
+    let mut total_pl_day = 0.0;
+    let mut total_open_pl = 0.0;
+    let mut total_cost = 0.0;
+    let mut total_net_liq = 0.0;
+    let mut total_bp_effect = 0.0;
 
     // Add a synthetic Cash row from the account's cash balance.
     if let Some(cash) = current_balances(value)
@@ -748,6 +822,8 @@ fn parse_positions(value: &Value) -> Vec<PositionRow> {
         .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
     {
         if cash != 0.0 {
+            total_cost += cash;
+            total_net_liq += cash;
             rows.push(PositionRow {
                 position: "Cash".to_string(),
                 qty: "—".to_string(),
@@ -814,6 +890,12 @@ fn parse_positions(value: &Value) -> Vec<PositionRow> {
             .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
             .unwrap_or(0.0);
 
+        total_pl_day += day_pl;
+        total_open_pl += open_pl;
+        total_cost += cost;
+        total_net_liq += market_value;
+        total_bp_effect += bp_effect;
+
         rows.push(PositionRow {
             position: symbol,
             qty: format_qty(qty),
@@ -830,6 +912,25 @@ fn parse_positions(value: &Value) -> Vec<PositionRow> {
             vega: String::new(),
         });
     }
+
+    if !rows.is_empty() {
+        rows.push(PositionRow {
+            position: "Totals:".to_string(),
+            qty: "—".to_string(),
+            pl_day: format_money(total_pl_day),
+            pl_open: format_money(total_open_pl),
+            pl_ytd: "—".to_string(),
+            cost: format_money(total_cost),
+            net_liq: format_money(total_net_liq),
+            trade_price: "—".to_string(),
+            bp_effect: format_money(total_bp_effect),
+            delta: "—".to_string(),
+            gamma: "—".to_string(),
+            theta: "—".to_string(),
+            vega: "—".to_string(),
+        });
+    }
+
     rows
 }
 
@@ -968,6 +1069,685 @@ pub async fn quote(symbol: &str) -> Result<String, String> {
             .await
             .map_err(|e| e.to_string())?,
     )
+}
+
+/// Fetches quote data in JSON format for UI consumption.
+pub async fn quote_json(symbol: &str) -> Result<String, String> {
+    let result = client()
+        .await?
+        .quote(symbol)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Parse Schwab response - structure is {symbol: {quote: {...}, reference: {...}, fundamental: {...}}}
+    let mut quote_data = if let Some(obj) = result.as_object() {
+        // Get the inner object (could be directly the symbol key or nested)
+        let inner = obj.get(symbol)
+            .or_else(|| obj.get("symbols").and_then(|s| s.as_object().and_then(|syms| syms.get(symbol))))
+            .unwrap_or(&result);
+
+        if let Some(q) = inner.as_object() {
+            // Extract from 'quote' section
+            let quote_section = q.get("quote").and_then(|v| v.as_object());
+            let ref_section = q.get("reference").and_then(|v| v.as_object());
+            let fund_section = q.get("fundamental").and_then(|v| v.as_object());
+            
+            let description = ref_section
+                .and_then(|r| r.get("description").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            
+            let last_price = quote_section
+                .and_then(|q| q.get("lastPrice").and_then(|v| v.as_f64()));
+            
+            let open_price = quote_section
+                .and_then(|q| q.get("openPrice").and_then(|v| v.as_f64()));
+            
+            let high_price = quote_section
+                .and_then(|q| q.get("highPrice").and_then(|v| v.as_f64()));
+            
+            let low_price = quote_section
+                .and_then(|q| q.get("lowPrice").and_then(|v| v.as_f64()));
+            
+            let close_price = quote_section
+                .and_then(|q| q.get("closePrice").and_then(|v| v.as_f64()));
+            
+            let net_change = quote_section
+                .and_then(|q| q.get("netChange").and_then(|v| v.as_f64()));
+            
+            let percent_change = quote_section
+                .and_then(|q| q.get("netPercentChange").and_then(|v| v.as_f64()));
+            
+            let bid_size = quote_section
+                .and_then(|q| q.get("bidSize").and_then(|v| v.as_u64()))
+                .map(|n| n.to_string());
+            
+            let ask_size = quote_section
+                .and_then(|q| q.get("askSize").and_then(|v| v.as_u64()))
+                .map(|n| n.to_string());
+            
+            let volume = quote_section
+                .and_then(|q| q.get("totalVolume").and_then(|v| v.as_u64()));
+            
+            // Calculate VWAP (simplified: average of high, low, close)
+            let vwap = match (high_price, low_price, close_price) {
+                (Some(h), Some(l), Some(c)) => Some((h + l + c) / 3.0),
+                _ => None,
+            };
+
+            // Helper: try multiple possible field names for the same concept.
+            let f64_from = |section: Option<&serde_json::Map<String, serde_json::Value>>, names: &[&str]| {
+                for name in names {
+                    if let Some(v) = section.and_then(|s| s.get(*name)).and_then(|v| v.as_f64()) {
+                        return Some(v);
+                    }
+                }
+                None
+            };
+
+            let string_from = |section: Option<&serde_json::Map<String, serde_json::Value>>, names: &[&str]| {
+                for name in names {
+                    if let Some(v) = section.and_then(|s| s.get(*name)).and_then(|v| v.as_str()) {
+                        return Some(v.to_string());
+                    }
+                }
+                None
+            };
+
+            let market_cap = f64_from(fund_section, &["marketCap", "market_cap", "marketCapitalization"])
+                .or_else(|| {
+                    // Calculate market cap if not provided: shares * price
+                    match (f64_from(fund_section, &["sharesOutstanding", "shares_outstanding"]), last_price) {
+                        (Some(shares), Some(price)) => Some(shares * price),
+                        _ => None,
+                    }
+                });
+
+            let pe_ratio = f64_from(fund_section, &["peRatio", "pe_ratio", "pe"]);
+
+            let dividend_yield = f64_from(fund_section, &["divYield", "dividendYield", "yield"]);
+
+            let eps = f64_from(fund_section, &["eps", "epsTTM"]);
+
+            let div_amount = f64_from(fund_section, &["divAmount", "dividendAmount"]);
+
+            let avg_10day_volume = f64_from(fund_section, &["avg10DaysVolume", "avg10DayVolume", "average10DayVolume"])
+                .map(|n| n as u64);
+
+            let avg_1year_volume = f64_from(fund_section, &["avg1YearVolume", "avg1YrVolume", "average1YearVolume"])
+                .map(|n| n as u64);
+
+            let shares_outstanding = f64_from(fund_section, &["sharesOutstanding", "shares_outstanding"]);
+
+            // Optional fields that may be present in the Schwab response depending on the symbol/asset type.
+            let beta = f64_from(fund_section, &["beta", "betaCoefficient"]);
+
+            let iv = f64_from(quote_section, &["volatility", "impliedVolatility", "iv"])
+                .or_else(|| f64_from(fund_section, &["volatility", "impliedVolatility", "iv"]));
+
+            let hv = f64_from(fund_section, &["historicalVolatility", "histVolatility", "hv"])
+                .or_else(|| f64_from(quote_section, &["historicalVolatility", "histVolatility", "hv"]));
+
+            let mmm = f64_from(quote_section, &["mmmv", "marketMakerMove", "mmm"])
+                .or_else(|| f64_from(fund_section, &["mmmv", "marketMakerMove", "mmm"]));
+
+            let ex_date = string_from(fund_section, &["exDate", "exDividendDate", "dividendDate"])
+                .or_else(|| string_from(ref_section, &["exDate", "exDividendDate", "dividendDate"]))
+                .map(format_schwab_date);
+
+            let earnings_date = string_from(ref_section, &["earningsDate", "nextEarningsDate", "earningsAnnounceDate", "lastEarningsDate"])
+                .or_else(|| string_from(fund_section, &["earningsDate", "nextEarningsDate", "earningsAnnounceDate", "lastEarningsDate"]))
+                .map(format_schwab_date);
+
+            serde_json::json!({
+                "symbol": symbol,
+                "description": description,
+                "lastPrice": last_price,
+                "openPrice": open_price,
+                "highPrice": high_price,
+                "lowPrice": low_price,
+                "closePrice": close_price,
+                "netChange": net_change,
+                "percentChange": percent_change,
+                "bidSize": bid_size,
+                "askSize": ask_size,
+                "volume": volume,
+                "marketCap": market_cap,
+                "peRatio": pe_ratio,
+                "dividendYield": dividend_yield,
+                "beta": beta,
+                "eps": eps,
+                "divAmount": div_amount,
+                "avg10DayVolume": avg_10day_volume,
+                "avg1YearVolume": avg_1year_volume,
+                "sharesOutstanding": shares_outstanding,
+                "vwap": vwap,
+                "iv": iv,
+                "hv": hv,
+                "mmm": mmm,
+                "exDate": ex_date,
+                "earningsDate": earnings_date,
+            })
+        } else {
+            serde_json::json!({ "symbol": symbol, "error": "Invalid quote format" })
+        }
+    } else {
+        serde_json::json!({ "symbol": symbol, "error": "Invalid quote response" })
+    };
+
+    // If fields are still missing, try to calculate or fetch them from other endpoints.
+    if let Some(obj) = quote_data.as_object_mut() {
+        let last_price = obj.get("lastPrice").and_then(|v| v.as_f64());
+
+        // Market cap fallback: shares outstanding * last price.
+        if obj.get("marketCap").is_none() || obj.get("marketCap").and_then(|v| v.as_f64()).is_none() {
+            if let (Some(shares), Some(price)) = (
+                obj.get("sharesOutstanding").and_then(|v| v.as_f64()).or_else(|| {
+                    obj.get("fundamental")
+                        .and_then(|f| f.get("sharesOutstanding"))
+                        .and_then(|v| v.as_f64())
+                }),
+                last_price,
+            ) {
+                obj.insert("marketCap".to_string(), serde_json::json!(shares * price));
+            }
+        }
+
+        // Yield fallback: annual dividend / last price.
+        let div_amount = obj.get("divAmount").and_then(|v| v.as_f64());
+        if obj.get("dividendYield").is_none() || obj.get("dividendYield").and_then(|v| v.as_f64()).is_none() {
+            if let (Some(div), Some(price)) = (div_amount, last_price) {
+                if div > 0.0 && price > 0.0 {
+                    // Schwab's divAmount is the most recent quarterly dividend for most equities.
+                    // Annualize it by multiplying by 4 as a practical approximation.
+                    let annual_yield = (div * 4.0) / price;
+                    obj.insert("dividendYield".to_string(), serde_json::json!(annual_yield));
+                }
+            }
+        }
+
+        // Fetch option chain to calculate IV and MMM when not provided by the quote endpoint.
+        let need_iv = obj.get("iv").is_none() || obj.get("iv").and_then(|v| v.as_f64()).is_none();
+        let need_mmm = obj.get("mmm").is_none() || obj.get("mmm").and_then(|v| v.as_f64()).is_none();
+        if need_iv || need_mmm {
+            if let Ok(Some((chain_iv, dte))) = fetch_option_chain_iv_and_dte(symbol, last_price.unwrap_or(0.0)).await {
+                if need_iv {
+                    obj.insert("iv".to_string(), serde_json::json!(chain_iv));
+                }
+                if need_mmm {
+                    let iv_decimal = if chain_iv > 1.0 { chain_iv / 100.0 } else { chain_iv };
+                    // MMM is the expected one-sided move (±) to the nearest expiration.
+                    // Approximate it as half the ATM straddle price.
+                    let dte = dte.max(1);
+                    let mmm = last_price.unwrap_or(0.0) * iv_decimal * (dte as f64 / 365.0).sqrt() / 2.0;
+                    if mmm > 0.0 {
+                        obj.insert("mmm".to_string(), serde_json::json!(mmm));
+                    }
+                }
+            }
+        }
+
+        // Fetch price history once and derive HV, 50-day avg volume, and beta from it.
+        let need_hv = obj.get("hv").is_none() || obj.get("hv").and_then(|v| v.as_f64()).is_none();
+        let need_50d = obj.get("avg50DayVolume").is_none() || obj.get("avg50DayVolume").and_then(|v| v.as_u64()).is_none();
+        let need_beta = obj.get("beta").is_none() || obj.get("beta").and_then(|v| v.as_f64()).is_none();
+
+        if need_hv || need_50d {
+            if let Ok(candles) = fetch_price_history_candles(symbol, "year", "1").await {
+                if need_hv {
+                    if let Some(hv) = calculate_historical_volatility(&candles) {
+                        obj.insert("hv".to_string(), serde_json::json!(hv));
+                    }
+                }
+                if need_50d {
+                    if let Some(avg) = calculate_50day_avg_volume(&candles) {
+                        obj.insert("avg50DayVolume".to_string(), serde_json::json!(avg));
+                    }
+                }
+            }
+        }
+
+        if need_beta {
+            if let Ok(Some(beta)) = calculate_beta(symbol).await {
+                obj.insert("beta".to_string(), serde_json::json!(beta));
+            }
+        }
+
+        // Earnings date from instruments fundamental projection.
+        if obj.get("earningsDate").is_none() || obj.get("earningsDate").and_then(|v| v.as_str()).is_none() {
+            if let Ok(Some(date)) = fetch_earnings_date(symbol).await {
+                obj.insert("earningsDate".to_string(), serde_json::json!(date));
+            }
+        }
+    }
+
+    Ok(serde_json::to_string_pretty(&quote_data).unwrap_or_else(|_| "{\"error\": \"Failed to serialize\"}".to_string()))
+}
+
+/// Fetches the option chain and extracts implied volatility plus days to expiration.
+/// Returns (iv as a percent value, days to expiration).
+async fn fetch_option_chain_iv_and_dte(symbol: &str, underlying_price: f64) -> Result<Option<(f64, u64)>, String> {
+    let response = client()
+        .await?
+        .option_chain(symbol)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Schwab often includes a top-level volatility figure.
+    if let Some(vol) = response.get("volatility").and_then(|v| v.as_f64()) {
+        let dte = response.get("daysToExpiration").and_then(|v| v.as_u64()).unwrap_or(30);
+        return Ok(Some((vol, dte)));
+    }
+
+    // Otherwise find the nearest expiration and the ATM strike's call+put IV.
+    let mut nearest_date: Option<String> = None;
+    let mut min_dte: u64 = u64::MAX;
+
+    for map_name in ["callExpDateMap", "putExpDateMap"] {
+        if let Some(map) = response.get(map_name).and_then(|v| v.as_object()) {
+            for key in map.keys() {
+                // Schwab keys look like "2026-07-24:1" where the suffix is DTE.
+                let parts: Vec<&str> = key.split(':').collect();
+                if let Some(dte_str) = parts.get(1) {
+                    if let Ok(dte) = dte_str.parse::<u64>() {
+                        if dte < min_dte {
+                            min_dte = dte;
+                            nearest_date = Some(key.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let nearest_date = match nearest_date {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    // Collect strikes and their IVs from calls and puts, then pick the ATM strike.
+    let mut strike_ivs: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    for map_name in ["callExpDateMap", "putExpDateMap"] {
+        if let Some(map) = response.get(map_name).and_then(|v| v.as_object()) {
+            if let Some(strikes) = map.get(&nearest_date).and_then(|v| v.as_object()) {
+                for (strike_str, option_list) in strikes {
+                    if let Some(options) = option_list.as_array() {
+                        for opt in options {
+                            if let Some(iv) = opt.get("volatility").and_then(|v| v.as_f64()) {
+                                strike_ivs.entry(strike_str.clone()).or_default().push(iv);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if strike_ivs.is_empty() {
+        return Ok(None);
+    }
+
+    let atm_strike = strike_ivs
+        .keys()
+        .filter_map(|s| s.parse::<f64>().ok())
+        .min_by(|a, b| {
+            let da = (a - underlying_price).abs();
+            let db = (b - underlying_price).abs();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+    let atm_strike_str = match atm_strike {
+        Some(s) => format!("{}", s),
+        None => return Ok(None),
+    };
+
+    let ivs = strike_ivs.get(&atm_strike_str).cloned().unwrap_or_default();
+    if ivs.is_empty() {
+        return Ok(None);
+    }
+
+    let avg_iv = ivs.iter().sum::<f64>() / ivs.len() as f64;
+    Ok(Some((avg_iv, min_dte)))
+}
+
+/// Fetches daily price history candles for a symbol.
+async fn fetch_price_history_candles(
+    symbol: &str,
+    period_type: &str,
+    period: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let response = client()
+        .await?
+        .price_history(&[
+            ("symbol", symbol),
+            ("periodType", period_type),
+            ("period", period),
+            ("frequencyType", "daily"),
+            ("frequency", "1"),
+        ])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(response
+        .get("candles")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default())
+}
+
+/// Calculates annualized historical volatility from daily closing prices.
+fn calculate_historical_volatility(candles: &[serde_json::Value]) -> Option<f64> {
+    let closes: Vec<f64> = candles
+        .iter()
+        .filter_map(|c| c.get("close").and_then(|v| v.as_f64()))
+        .collect();
+
+    if closes.len() < 2 {
+        return None;
+    }
+
+    let log_returns: Vec<f64> = closes
+        .windows(2)
+        .filter_map(|w| {
+            if w[0] > 0.0 && w[1] > 0.0 {
+                Some((w[1] / w[0]).ln())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if log_returns.is_empty() {
+        return None;
+    }
+
+    let mean = log_returns.iter().sum::<f64>() / log_returns.len() as f64;
+    let variance = log_returns
+        .iter()
+        .map(|r| (r - mean).powi(2))
+        .sum::<f64>()
+        / log_returns.len() as f64;
+    let daily_std = variance.sqrt();
+    let annualized = daily_std * (252.0_f64).sqrt();
+
+    // Return as a percent value (e.g. 25.0 for 25%).
+    Some(annualized * 100.0)
+}
+
+/// Calculates the simple average volume over the most recent 50 daily candles.
+fn calculate_50day_avg_volume(candles: &[serde_json::Value]) -> Option<u64> {
+    let volumes: Vec<u64> = candles
+        .iter()
+        .rev()
+        .take(50)
+        .filter_map(|c| c.get("volume").and_then(|v| v.as_u64()))
+        .collect();
+
+    if volumes.is_empty() {
+        return None;
+    }
+
+    Some(volumes.iter().sum::<u64>() / volumes.len() as u64)
+}
+
+/// Calculates beta against SPY using up to the last ~252 trading days of daily returns.
+async fn calculate_beta(symbol: &str) -> Result<Option<f64>, String> {
+    let symbol_candles = fetch_price_history_candles(symbol, "year", "2").await?;
+    let benchmark_candles = fetch_price_history_candles("SPY", "year", "2").await?;
+
+    let symbol_map = close_by_date(&symbol_candles);
+    let benchmark_map = close_by_date(&benchmark_candles);
+
+    let mut common_dates: Vec<i64> = symbol_map
+        .keys()
+        .filter(|k| benchmark_map.contains_key(*k))
+        .filter_map(|k| k.parse::<i64>().ok())
+        .collect();
+    common_dates.sort_unstable();
+
+    if common_dates.len() < 60 {
+        return Ok(None);
+    }
+
+    // Use the most recent 252 trading days (~1 year), matching the typical beta window.
+    let dates = &common_dates[common_dates.len().saturating_sub(252)..];
+
+    let symbol_closes: Vec<f64> = dates
+        .iter()
+        .filter_map(|d| symbol_map.get(&d.to_string()).copied())
+        .collect();
+    let benchmark_closes: Vec<f64> = dates
+        .iter()
+        .filter_map(|d| benchmark_map.get(&d.to_string()).copied())
+        .collect();
+
+    let symbol_returns = log_returns(&symbol_closes);
+    let benchmark_returns = log_returns(&benchmark_closes);
+
+    if symbol_returns.len() < 30 || benchmark_returns.len() < 30 {
+        return Ok(None);
+    }
+
+    let mean_s = symbol_returns.iter().sum::<f64>() / symbol_returns.len() as f64;
+    let mean_b = benchmark_returns.iter().sum::<f64>() / benchmark_returns.len() as f64;
+
+    let covariance = symbol_returns
+        .iter()
+        .zip(benchmark_returns.iter())
+        .map(|(si, bi)| (si - mean_s) * (bi - mean_b))
+        .sum::<f64>()
+        / symbol_returns.len() as f64;
+    let variance = benchmark_returns
+        .iter()
+        .map(|bi| (bi - mean_b).powi(2))
+        .sum::<f64>()
+        / benchmark_returns.len() as f64;
+
+    if variance == 0.0 || variance.is_nan() {
+        return Ok(None);
+    }
+
+    Ok(Some(covariance / variance))
+}
+
+fn close_by_date(candles: &[serde_json::Value]) -> std::collections::HashMap<String, f64> {
+    let mut map = std::collections::HashMap::new();
+    for c in candles {
+        if let (Some(ts), Some(close)) = (
+            c.get("datetime")
+                .and_then(|v| v.as_i64())
+                .or_else(|| c.get("date").and_then(|v| v.as_i64())),
+            c.get("close").and_then(|v| v.as_f64()),
+        ) {
+            map.insert(ts.to_string(), close);
+        }
+    }
+    map
+}
+
+fn log_returns(closes: &[f64]) -> Vec<f64> {
+    closes
+        .windows(2)
+        .filter_map(|w| {
+            if w[0] > 0.0 && w[1] > 0.0 {
+                Some((w[1] / w[0]).ln())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Fetches the instrument fundamental projection and tries to find an earnings date.
+async fn fetch_earnings_date(symbol: &str) -> Result<Option<String>, String> {
+    let response = client()
+        .await?
+        .instruments(&[("symbol", symbol), ("projection", "fundamental")])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let instruments = response
+        .get("instruments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    for inst in instruments {
+        if let Some(fund) = inst.get("fundamental").and_then(|v| v.as_object()) {
+            for key in ["earningsDate", "nextEarningsDate", "earningsAnnounceDate", "lastEarningsDate", "dividendDate", "exDate"] {
+                if let Some(date) = fund.get(key).and_then(|v| v.as_str()) {
+                    return Ok(Some(format_schwab_date(date.to_string())));
+                }
+            }
+        }
+        for key in ["earningsDate", "nextEarningsDate", "earningsAnnounceDate", "lastEarningsDate"] {
+            if let Some(date) = inst.get(key).and_then(|v| v.as_str()) {
+                return Ok(Some(format_schwab_date(date.to_string())));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Formats a Schwab ISO-like date string (e.g. "2026-05-05T00:00:00Z") as MM/DD/YY.
+/// Non-ISO strings are returned unchanged.
+fn format_schwab_date(date_str: String) -> String {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_str) {
+        return dt.format("%m/%d/%y").to_string();
+    }
+    if let Ok(naive) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+        return naive.format("%m/%d/%y").to_string();
+    }
+    date_str
+}
+
+/// Search result for an instrument (stock/ETF/etc.).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InstrumentSearchResult {
+    /// Ticker symbol.
+    pub symbol: String,
+    /// Company/fund name.
+    pub description: String,
+    /// Asset type (Equity, ETF, etc.).
+    pub asset_type: String,
+    /// Exchange.
+    pub exchange: String,
+}
+
+/// `schwab search-instruments <query>` — Search instruments returning JSON array.
+pub async fn search_instruments_json(query: &str) -> Result<String, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok("[]".to_string());
+    }
+
+    let results = client()
+        .await?
+        .instruments(&[("symbol", query), ("projection", "symbol-search")])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut instruments = Vec::new();
+    
+    // Schwab returns {"instruments": [...]} - extract the array
+    if let Some(obj) = results.as_object() {
+        if let Some(instruments_array) = obj.get("instruments").and_then(|v| v.as_array()) {
+            for inst_value in instruments_array {
+                if let Some(inst) = inst_value.as_object() {
+                    let symbol = inst
+                        .get("symbol")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let description = inst
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let asset_type = inst
+                        .get("assetType")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let exchange = inst
+                        .get("exchange")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    instruments.push(serde_json::json!({
+                        "symbol": symbol,
+                        "description": description,
+                        "asset_type": asset_type,
+                        "exchange": exchange,
+                    }));
+                }
+            }
+        }
+    }
+
+    instruments.sort_by(|a, b| {
+        a["symbol"].as_str().unwrap_or("").cmp(b["symbol"].as_str().unwrap_or(""))
+    });
+
+    Ok(serde_json::to_string_pretty(&instruments).unwrap_or_else(|_| "[]".to_string()))
+}
+
+/// Searches for instruments by symbol or company name (internal use).
+pub async fn search_instruments(query: &str) -> Result<Vec<InstrumentSearchResult>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let results = client()
+        .await?
+        .instruments(&[("symbol", query), ("projection", "symbol-search")])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut instruments = Vec::new();
+    
+    // Schwab returns {"instruments": [...]} - extract the array
+    if let Some(obj) = results.as_object() {
+        if let Some(instruments_array) = obj.get("instruments").and_then(|v| v.as_array()) {
+            for inst_value in instruments_array {
+                if let Some(inst) = inst_value.as_object() {
+                    let symbol = inst
+                        .get("symbol")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let description = inst
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let asset_type = inst
+                        .get("assetType")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let exchange = inst
+                        .get("exchange")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    instruments.push(InstrumentSearchResult {
+                        symbol,
+                        description,
+                        asset_type,
+                        exchange,
+                    });
+                }
+            }
+        }
+    }
+
+    instruments.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    
+    Ok(instruments)
 }
 
 /// `schwab chains <symbol>` — GET /chains?symbol=...
@@ -1173,7 +1953,7 @@ mod tests {
         });
 
         let rows = super::parse_positions(&response);
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
 
         let cash = rows.iter().find(|r| r.position == "Cash").unwrap();
         assert_eq!(cash.net_liq, "$8,367.51");
@@ -1185,6 +1965,13 @@ mod tests {
         assert_eq!(schg.trade_price, "$33.15");
         assert_eq!(schg.pl_day, "$9.89");
         assert_eq!(schg.pl_open, "$95.89");
+
+        let totals = rows.iter().find(|r| r.position == "Totals:").unwrap();
+        assert_eq!(totals.qty, "—");
+        assert_eq!(totals.pl_day, "$9.89");
+        assert_eq!(totals.pl_open, "$95.89");
+        assert_eq!(totals.cost, "$11,218.41");
+        assert_eq!(totals.net_liq, "$11,314.30");
     }
 
     #[test]

@@ -2193,10 +2193,16 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-settings-get`\n- `allow-settings-set`",
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`",
           "type": "string",
           "const": "finch:default",
-          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-settings-get`\n- `allow-settings-set`"
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`"
+        },
+        {
+          "description": "Enables the ask_stock_question command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-ask-stock-question",
+          "markdownDescription": "Enables the ask_stock_question command without any pre-configured scope."
         },
         {
           "description": "Enables the run_cli command without any pre-configured scope.",
@@ -2229,6 +2235,18 @@
           "markdownDescription": "Enables the schwab_auth_complete command without any pre-configured scope."
         },
         {
+          "description": "Enables the schwab_auth_login command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-auth-login",
+          "markdownDescription": "Enables the schwab_auth_login command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the schwab_auth_logout command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-schwab-auth-logout",
+          "markdownDescription": "Enables the schwab_auth_logout command without any pre-configured scope."
+        },
+        {
           "description": "Enables the schwab_auth_status command without any pre-configured scope.",
           "type": "string",
           "const": "finch:allow-schwab-auth-status",
@@ -2259,6 +2277,12 @@
           "markdownDescription": "Enables the settings_set command without any pre-configured scope."
         },
         {
+          "description": "Denies the ask_stock_question command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-ask-stock-question",
+          "markdownDescription": "Denies the ask_stock_question command without any pre-configured scope."
+        },
+        {
           "description": "Denies the run_cli command without any pre-configured scope.",
           "type": "string",
           "const": "finch:deny-run-cli",
@@ -2287,6 +2311,18 @@
           "type": "string",
           "const": "finch:deny-schwab-auth-complete",
           "markdownDescription": "Denies the schwab_auth_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_auth_login command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-auth-login",
+          "markdownDescription": "Denies the schwab_auth_login command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the schwab_auth_logout command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-schwab-auth-logout",
+          "markdownDescription": "Denies the schwab_auth_logout command without any pre-configured scope."
         },
         {
           "description": "Denies the schwab_auth_status command without any pre-configured scope.",

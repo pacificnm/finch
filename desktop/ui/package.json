@@ -8,9 +8,9 @@
     "build": "vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "tauri": "cd .. && npm exec --prefix ui tauri",
-    "tauri:dev": "cd .. && npm exec --prefix ui tauri dev",
-    "tauri:build": "cd .. && npm exec --prefix ui tauri build"
+    "tauri": "cd ../src-tauri && ../ui/node_modules/.bin/tauri",
+    "tauri:dev": "cd ../src-tauri && ../ui/node_modules/.bin/tauri dev",
+    "tauri:build": "cd ../src-tauri && ../ui/node_modules/.bin/tauri build"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.0",
@@ -24,6 +24,8 @@
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

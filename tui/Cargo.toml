@@ -12,6 +12,6 @@ path = "src/main.rs"
 finch-core = { path = "../crates/core" }
 nest-error = { workspace = true }
 nest-logging = { workspace = true }
-nest-tui = { workspace = true }
+nest-tui = { workspace = true, features = ["async"] }
 crossterm = { workspace = true }
 ratatui = { workspace = true }

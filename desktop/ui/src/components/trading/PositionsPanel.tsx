@@ -168,23 +168,27 @@ export function PositionsPanel({
                   </td>
                 </tr>
               ) : (
-                positionRows.map((row) => (
-                  <tr key={row.position} className="border-t border-nest-border">
-                    <td className="py-1 pr-3 font-medium">{row.position}</td>
-                    <td className="py-1 pr-3">{row.qty}</td>
-                    <td className="py-1 pr-3">{row.pl_day}</td>
-                    <td className="py-1 pr-3">{row.pl_open}</td>
-                    <td className="py-1 pr-3">{row.pl_ytd}</td>
-                    <td className="py-1 pr-3">{row.cost}</td>
-                    <td className="py-1 pr-3">{row.net_liq}</td>
-                    <td className="py-1 pr-3">{row.trade_price}</td>
-                    <td className="py-1 pr-3">{row.bp_effect}</td>
-                    <td className="py-1 pr-3">{row.delta}</td>
-                    <td className="py-1 pr-3">{row.gamma}</td>
-                    <td className="py-1 pr-3">{row.theta}</td>
-                    <td className="py-1">{row.vega}</td>
-                  </tr>
-                ))
+                positionRows.map((row) => {
+                  const isTotals = row.position === "Totals:";
+                  const weight = isTotals ? "font-semibold" : "font-medium";
+                  return (
+                    <tr key={row.position} className="border-t border-nest-border">
+                      <td className={`py-1 pr-3 ${weight}`}>{row.position}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.qty}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.pl_day}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.pl_open}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.pl_ytd}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.cost}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.net_liq}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.trade_price}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.bp_effect}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.delta}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.gamma}</td>
+                      <td className={`py-1 pr-3 ${isTotals ? "font-semibold" : ""}`}>{row.theta}</td>
+                      <td className={isTotals ? "py-1 font-semibold" : "py-1"}>{row.vega}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -232,14 +236,21 @@ function ActivityTable({
               </td>
             </tr>
           ) : (
-            orders.map((order) => (
+            orders.map((order) => {
+              const side = order.side.toUpperCase();
+              const sideClass = side.includes("SELL")
+                ? "text-nest-error"
+                : side.includes("BUY")
+                  ? "text-nest-success"
+                  : "";
+              return (
               <tr key={order.order_id} className="border-t border-nest-border">
                 <td className="py-1 pr-3">
                   <input type="checkbox" className="size-3 accent-nest-primary" aria-label={`Select order ${order.order_id}`} />
                 </td>
                 <td className="py-1 pr-3">{order.time}</td>
-                <td className="py-1 pr-3">{order.side}</td>
-                <td className="py-1 pr-3">{order.pos_effect}</td>
+                <td className={`py-1 pr-3 font-medium ${sideClass}`}>{order.side}</td>
+                <td className={`py-1 pr-3 font-medium ${sideClass}`}>{order.pos_effect}</td>
                 <td className="py-1 pr-3">{order.qty}</td>
                 <td className="py-1 pr-3">{order.amount}</td>
                 <td className="py-1 pr-3 font-medium">{order.symbol}</td>
@@ -250,7 +261,8 @@ function ActivityTable({
                 <td className="py-1 pr-3">{order.net_prc}</td>
                 <td className="py-1">{order.status}</td>
               </tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </table>

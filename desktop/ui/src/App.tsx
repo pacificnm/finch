@@ -9,6 +9,7 @@ import {
   fetchThemeCss,
   listThemes,
   runCli,
+  schwabAuthLogout,
   schwabAuthStatus,
   setActiveTheme,
   type AppMetadata,
@@ -17,11 +18,13 @@ import {
 import { quitApp } from "./lib/tauri";
 
 const THEME_STORAGE_KEY = "finch.theme-id";
+const DEFAULT_SYMBOL = "SCHG";
 
 export function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
   const [activeThemeId, setActiveThemeId] = useState<string | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_SYMBOL);
   const [authStatus, setAuthStatus] = useState<"checking" | "logged-in" | "logged-out">("checking");
   const toast = useToast();
   const { setStatus } = useStatusBar();
@@ -84,6 +87,11 @@ export function App() {
 
   const appTitle = metadata?.title ?? "Finch";
 
+  const handleSymbolSelect = (symbol: string) => {
+    setSelectedSymbol(symbol);
+    setStatus(`Loaded ${symbol}`, { variant: "success", timeoutMs: 2000 });
+  };
+
   return (
     <AppShell
       titleBar={
@@ -91,6 +99,12 @@ export function App() {
           themes={themes}
           activeThemeId={activeThemeId}
           onSelectTheme={handleSelectTheme}
+          onSymbolSelect={handleSymbolSelect}
+          onLogOut={() => {
+            void schwabAuthLogout()
+              .then(() => setAuthStatus("logged-out"))
+              .catch((error: unknown) => toast.error(`Failed to log out: ${String(error)}`));
+          }}
           onQuit={() => void quitApp()}
           onShowRecipes={() => {
             void runCli("ListRecipes")
@@ -118,7 +132,7 @@ export function App() {
       ) : authStatus === "logged-out" ? (
         <LoginScreen onLoggedIn={() => setAuthStatus("logged-in")} />
       ) : (
-        <TradingWorkspace />
+        <TradingWorkspace symbol={selectedSymbol} />
       )}
     </AppShell>
   );

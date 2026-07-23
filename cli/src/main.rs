@@ -193,6 +193,11 @@ impl AsyncCliCommand for SchwabCommand {
                     .arg(req("symbol")),
             )
             .subcommand(
+                Command::new("quote-json")
+                    .about("Quote for a single symbol (JSON format for UI)")
+                    .arg(req("symbol")),
+            )
+            .subcommand(
                 Command::new("chains")
                     .about("Option chain for a symbol")
                     .arg(req("symbol")),
@@ -236,6 +241,11 @@ impl AsyncCliCommand for SchwabCommand {
                 Command::new("instrument")
                     .about("A single instrument by CUSIP")
                     .arg(req("cusip_id")),
+            )
+            .subcommand(
+                Command::new("search-instruments")
+                    .about("Search instruments by symbol or description (returns JSON)")
+                    .arg(req("query")),
             )
     }
 
@@ -304,6 +314,7 @@ async fn run_schwab(matches: &ArgMatches) -> Result<String, String> {
             schwab::quotes(&symbols).await
         }
         "quote" => schwab::quote(get("symbol")).await,
+        "quote-json" => schwab::quote_json(get("symbol")).await,
         "chains" => schwab::option_chain(get("symbol")).await,
         "expiration-chain" => schwab::expiration_chain(get("symbol")).await,
         "price-history" => {
@@ -322,6 +333,7 @@ async fn run_schwab(matches: &ArgMatches) -> Result<String, String> {
         "market-hours" => schwab::market_hours(get_opt("markets"), get_opt("date")).await,
         "instruments" => schwab::instruments(get("symbol"), get_opt("projection")).await,
         "instrument" => schwab::instrument_by_cusip(get("cusip_id")).await,
+        "search-instruments" => schwab::search_instruments_json(get("query")).await,
         other => Err(format!("unknown `schwab` subcommand: {other}")),
     }
 }

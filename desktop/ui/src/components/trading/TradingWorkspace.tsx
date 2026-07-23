@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { IconRail, type WorkspaceSection } from "./IconRail";
 import { AccountPanel } from "./AccountPanel";
 import { PositionsPanel } from "./PositionsPanel";
+import { AiChatPanel } from "./AiChatPanel";
 import { ChartsScreen } from "./ChartsScreen";
-import { TradeScreen } from "./TradeScreen";
+import { TradeScreen, MOCK_SYMBOL } from "./TradeScreen";
 import { ResizeHandle } from "./ResizeHandle";
 import {
   fetchSchwabAccountSummary,
@@ -17,6 +18,7 @@ import {
 } from "../../lib/nest";
 import { SettingKeys, Settings } from "../../lib/settings";
 import { useToast } from "../../shell";
+import type { TradeSetup } from "./OrderTicket";
 
 const SECTION_LABEL: Record<WorkspaceSection, string> = {
   positions: "Positions",
@@ -39,13 +41,18 @@ function formatAccountLabel(account: SchwabAccount): string {
   return display;
 }
 
+type TradingWorkspaceProps = {
+  /** Initial symbol to display in the Trade screen. */
+  symbol?: string;
+};
+
 /**
  * The trading workspace: icon rail | account panel | section content | right
  * positions rail (hidden on the Positions section itself, since the main
  * content already shows the full positions view there — matches the
  * reference: only Trade/Charts/Scans keep the right rail docked).
  */
-export function TradingWorkspace() {
+export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
   const [section, setSection] = useState<WorkspaceSection>("positions");
   const [accountWidth, setAccountWidth] = useState(DEFAULT_ACCOUNT_WIDTH);
   const [positionsWidth, setPositionsWidth] = useState(DEFAULT_POSITIONS_WIDTH);
@@ -60,6 +67,7 @@ export function TradingWorkspace() {
   });
   const [orders, setOrders] = useState<SchwabOrderRow[]>([]);
   const [positions, setPositions] = useState<SchwabPositionRow[]>([]);
+  const [tradeSetup, setTradeSetup] = useState<TradeSetup | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -203,7 +211,7 @@ export function TradingWorkspace() {
         ) : section === "charts" ? (
           <ChartsScreen />
         ) : section === "trade" ? (
-          <TradeScreen />
+          <TradeScreen symbol={symbol} tradeSetup={tradeSetup} onClearTradeSetup={() => setTradeSetup(null)} />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-nest-muted">
             <p className="text-sm font-medium">{SECTION_LABEL[section]}</p>
@@ -219,12 +227,16 @@ export function TradingWorkspace() {
             className="shrink-0 border-l border-nest-border bg-nest-surface"
             style={{ width: positionsWidth }}
           >
-            <PositionsPanel
-              accountLabel={accountLabel}
-              orders={orders}
-              positions={positions}
-              variant="compact"
-            />
+            {section === "trade" ? (
+              <AiChatPanel symbol={symbol ?? MOCK_SYMBOL} onTradeSetup={setTradeSetup} />
+            ) : (
+              <PositionsPanel
+                accountLabel={accountLabel}
+                orders={orders}
+                positions={positions}
+                variant="compact"
+              />
+            )}
           </div>
         </>
       ) : null}
