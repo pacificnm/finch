@@ -4,13 +4,10 @@ import { Bell, ChevronDown, LayoutGrid, Plus } from "lucide-react";
 import { CandlestickChart, type ActiveStudies, type ChartPattern } from "./CandlestickChart";
 import { StudiesDialog } from "./StudiesDialog";
 import { ChartSettingsDialog } from "./ChartSettingsDialog";
-import {
-  getDefaultIntervalForPeriod,
-  getIntervalOptionsForPeriod,
-  type IntervalValue,
-} from "../../lib/chartIntervals";
+import { getIntervalOptionsForPeriod } from "../../lib/chartIntervals";
 import { aggregateWeekly, generateMockCandles } from "../../lib/mockOhlc";
 import { fetchPriceHistory, fetchQuote, type OhlcvData } from "../../lib/nest";
+import { useLiveCandles } from "../../lib/useLiveCandles";
 import { MOCK_SYMBOL } from "./TradeScreen";
 
 type QuoteData = {
@@ -31,6 +28,14 @@ type ChartsScreenProps = {
   onToggleStudy: (key: keyof ActiveStudies) => void;
   /** AI-detected chart pattern overlays — shared with the Trade screen and the AI chat panel. */
   patterns?: ChartPattern[];
+  /** Selected chart period, e.g. "1y" — shared with the Trade screen and persisted. */
+  period: string;
+  /** Called when the user changes the period. */
+  onPeriodChange: (value: string) => void;
+  /** Selected chart interval, e.g. "1d" — shared with the Trade screen and persisted. */
+  aggregation: string;
+  /** Called when the user changes the interval. */
+  onAggregationChange: (value: string) => void;
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -56,9 +61,11 @@ export function ChartsScreen({
   studies,
   onToggleStudy,
   patterns = [],
+  period,
+  onPeriodChange,
+  aggregation,
+  onAggregationChange,
 }: ChartsScreenProps) {
-  const [period, setPeriod] = useState("1y");
-  const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quoteData, setQuoteData] = useState<QuoteData | null>(null);
@@ -67,16 +74,6 @@ export function ChartsScreen({
   const [candlesError, setCandlesError] = useState(false);
 
   const intervalOptions = useMemo(() => getIntervalOptionsForPeriod(period), [period]);
-
-  useEffect(() => {
-    const validValues = new Set(intervalOptions.map((option) => option.value));
-    setAggregation((current) => {
-      if (!validValues.has(current as IntervalValue)) {
-        return getDefaultIntervalForPeriod(period);
-      }
-      return current;
-    });
-  }, [period, intervalOptions]);
 
   // Fetch real price history when symbol, period, or interval changes.
   useEffect(() => {
@@ -120,6 +117,11 @@ export function ChartsScreen({
     };
   }, [symbol, period, aggregation]);
 
+  // Keep the chart current without redrawing it: polls a small recent
+  // window and merges just the changed tail (see useLiveCandles for why
+  // this never resets zoom/pan or flickers).
+  useLiveCandles(symbol, aggregation, !candlesLoading, setCandles);
+
   // Fetch quote data when symbol changes.
   useEffect(() => {
     if (!symbol) return;
@@ -153,9 +155,12 @@ export function ChartsScreen({
   const chartChangePercent = last && prev && prev.close !== 0 ? (chartChange / prev.close) * 100 : 0;
 
   const displayName = quoteData?.description || symbol;
-  const price = quoteData?.lastPrice ?? (last?.close || 0);
-  const change = quoteData?.netChange ?? chartChange;
-  const changePercent = quoteData?.percentChange ?? chartChangePercent;
+  // Price and change always come from `candles` — the exact same array the
+  // chart renders — so this can never drift from what's on screen. Only
+  // fall back to the one-shot quote fetch before any candle has loaded.
+  const price = last?.close ?? quoteData?.lastPrice ?? 0;
+  const change = last && prev ? chartChange : (quoteData?.netChange ?? 0);
+  const changePercent = last && prev ? chartChangePercent : (quoteData?.percentChange ?? 0);
   const negative = change < 0;
 
   return (
@@ -245,14 +250,14 @@ export function ChartsScreen({
         <span className="flex-1" />
         <Select
           value={period}
-          onChange={setPeriod}
+          onChange={onPeriodChange}
           options={PERIOD_OPTIONS}
           size="small"
           className="!w-fit shrink-0"
         />
         <Select
           value={aggregation}
-          onChange={setAggregation}
+          onChange={onAggregationChange}
           options={intervalOptions}
           size="small"
           className="!w-fit shrink-0"

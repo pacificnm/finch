@@ -4,6 +4,7 @@ import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { StatusBarProvider } from "./context/StatusBarContext";
 import { ToastProvider } from "./context/ToastContext";
+import { TimezoneProvider } from "./context/TimezoneContext";
 import "./lib/fontawesome";
 import "./index.css";
 
@@ -12,7 +13,9 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary label="root">
       <ToastProvider>
         <StatusBarProvider>
-          <App />
+          <TimezoneProvider>
+            <App />
+          </TimezoneProvider>
         </StatusBarProvider>
       </ToastProvider>
     </ErrorBoundary>

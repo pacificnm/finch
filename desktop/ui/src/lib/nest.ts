@@ -46,6 +46,8 @@ export type CliCommand =
         period: string;
         frequency_type: string;
         frequency: string;
+        start_date?: string;
+        end_date?: string;
       };
     };
 
@@ -265,10 +267,33 @@ export async function fetchQuote(symbol: string): Promise<QuoteData> {
   }
 }
 
+// Schwab's relative `periodType=day` window doesn't reliably include the
+// current session — confirmed live: `periodType=day&period=1` (and `2`)
+// returned only bars through the prior day's after-hours close, even hours
+// into today's open session, while an equivalent explicit `startDate`/
+// `endDate` request returned bars up to the current minute. So the
+// day-based periods below carry a calendar-day lookback for use as explicit
+// dates instead of being sent as `periodType`/`period`.
+const DAY_PERIOD_LOOKBACK_DAYS: Record<string, number> = {
+  today: 1,
+  "1d": 1,
+  "3d": 3,
+  "1w": 7,
+  "2w": 14,
+};
+
 function schwabHistoryParams(
   period: string,
   interval: string,
-): { period_type: string; period: string; frequency_type: string; frequency: string; aggregate_to?: string } {
+): {
+  period_type: string;
+  period: string;
+  frequency_type: string;
+  frequency: string;
+  aggregate_to?: string;
+  start_date?: string;
+  end_date?: string;
+} {
   // Map period to Schwab periodType/period.
   const periodMap: Record<string, { period_type: string; period: string }> = {
     today: { period_type: "day", period: "1" },
@@ -310,6 +335,13 @@ function schwabHistoryParams(
   // Validate: minute data is only supported with periodType=day.
   if (intervalMapped.frequency_type === "minute" && mapped.period_type !== "day") {
     return { period_type: mapped.period_type, period: mapped.period, frequency_type: "daily", frequency: "1" };
+  }
+
+  if (intervalMapped.frequency_type === "minute") {
+    const lookbackDays = DAY_PERIOD_LOOKBACK_DAYS[period] ?? 1;
+    const end = Date.now();
+    const start = end - lookbackDays * 24 * 60 * 60 * 1000;
+    return { ...mapped, ...intervalMapped, start_date: String(start), end_date: String(end) };
   }
 
   return { ...mapped, ...intervalMapped };
@@ -371,6 +403,8 @@ export async function fetchPriceHistory(
         period: params.period,
         frequency_type: params.frequency_type,
         frequency: params.frequency,
+        start_date: params.start_date,
+        end_date: params.end_date,
       },
     } as CliCommand);
     console.log("[fetchPriceHistory] CLI raw response:\n", jsonStr);

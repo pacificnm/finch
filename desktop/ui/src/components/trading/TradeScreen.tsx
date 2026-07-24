@@ -7,13 +7,10 @@ import { ChartSettingsDialog } from "./ChartSettingsDialog";
 import { QuoteDetails } from "./QuoteDetails";
 import { TradesTable } from "./TradesTable";
 import { OrderTicket } from "./OrderTicket";
-import {
-  getDefaultIntervalForPeriod,
-  getIntervalOptionsForPeriod,
-  type IntervalValue,
-} from "../../lib/chartIntervals";
+import { getIntervalOptionsForPeriod } from "../../lib/chartIntervals";
 import { generateMockCandles } from "../../lib/mockOhlc";
 import { fetchPriceHistory, fetchQuote, type OhlcvData } from "../../lib/nest";
+import { useLiveCandles } from "../../lib/useLiveCandles";
 import type { TradeSetup } from "./OrderTicket";
 
 export const MOCK_SYMBOL = "SCHG";
@@ -40,6 +37,14 @@ type TradeScreenProps = {
   onToggleStudy: (key: keyof ActiveStudies) => void;
   /** AI-detected chart pattern overlays — shared with the Charts screen and the AI chat panel. */
   patterns?: ChartPattern[];
+  /** Selected chart period, e.g. "1y" — shared with the Charts screen and persisted. */
+  period: string;
+  /** Called when the user changes the period. */
+  onPeriodChange: (value: string) => void;
+  /** Selected chart interval, e.g. "1d" — shared with the Charts screen and persisted. */
+  aggregation: string;
+  /** Called when the user changes the interval. */
+  onAggregationChange: (value: string) => void;
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -73,10 +78,12 @@ export function TradeScreen({
   studies,
   onToggleStudy,
   patterns = [],
+  period,
+  onPeriodChange,
+  aggregation,
+  onAggregationChange,
 }: TradeScreenProps) {
   const [activeHeaderTab, setActiveHeaderTab] = useState("quote");
-  const [period, setPeriod] = useState("1y");
-  const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentSymbol, setCurrentSymbol] = useState(symbol);
@@ -86,16 +93,6 @@ export function TradeScreen({
   const [candlesError, setCandlesError] = useState(false);
 
   const intervalOptions = useMemo(() => getIntervalOptionsForPeriod(period), [period]);
-
-  useEffect(() => {
-    const validValues = new Set(intervalOptions.map((option) => option.value));
-    setAggregation((current) => {
-      if (!validValues.has(current as IntervalValue)) {
-        return getDefaultIntervalForPeriod(period);
-      }
-      return current;
-    });
-  }, [period, intervalOptions]);
 
   // Fetch real price history when symbol, period, or interval changes.
   useEffect(() => {
@@ -138,6 +135,11 @@ export function TradeScreen({
     };
   }, [currentSymbol, period, aggregation]);
 
+  // Keep the chart current without redrawing it: polls a small recent
+  // window and merges just the changed tail (see useLiveCandles for why
+  // this never resets zoom/pan or flickers).
+  useLiveCandles(currentSymbol, aggregation, !candlesLoading, setCandles);
+
   const last = candles.at(-1);
   const prev = candles.at(-2);
   const chartChange = last && prev ? last.close - prev.close : 0;
@@ -178,9 +180,12 @@ export function TradeScreen({
   }
 
   const displayName = quoteData?.description || currentSymbol;
-  const price = quoteData?.lastPrice ?? (last?.close || 0);
-  const quoteChange = quoteData?.netChange ?? chartChange;
-  const quoteChangePercent = quoteData?.percentChange ?? chartChangePercent;
+  // Price and change always come from `candles` — the exact same array the
+  // chart renders — so this can never drift from what's on screen. Only
+  // fall back to the one-shot quote fetch before any candle has loaded.
+  const price = last?.close ?? quoteData?.lastPrice ?? 0;
+  const quoteChange = last && prev ? chartChange : (quoteData?.netChange ?? 0);
+  const quoteChangePercent = last && prev ? chartChangePercent : (quoteData?.percentChange ?? 0);
   const negative = quoteChange < 0;
 
   return (
@@ -293,14 +298,14 @@ export function TradeScreen({
           <span className="flex-1" />
           <Select
             value={period}
-            onChange={setPeriod}
+            onChange={onPeriodChange}
             options={PERIOD_OPTIONS}
             size="small"
             className="!w-fit shrink-0"
           />
           <Select
             value={aggregation}
-            onChange={setAggregation}
+            onChange={onAggregationChange}
             options={intervalOptions}
             size="small"
             className="!w-fit shrink-0"
