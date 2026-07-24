@@ -3,7 +3,7 @@ import { IconRail, type WorkspaceSection } from "./IconRail";
 import { AccountPanel } from "./AccountPanel";
 import { PositionsPanel } from "./PositionsPanel";
 import { AiChatPanel } from "./AiChatPanel";
-import { type ActiveStudies } from "./CandlestickChart";
+import { type ActiveStudies, type ChartPattern } from "./CandlestickChart";
 import { ChartsScreen } from "./ChartsScreen";
 import { TradeScreen, MOCK_SYMBOL } from "./TradeScreen";
 import { ResizeHandle } from "./ResizeHandle";
@@ -82,6 +82,11 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
   // chart is currently on screen, and so a study toggled on one screen
   // stays on when you switch to the other.
   const [studies, setStudies] = useState<ActiveStudies>(DEFAULT_STUDIES);
+  // AI-detected chart pattern overlays, shared the same way `studies` is.
+  // Unlike studies, these are cleared on symbol change below — a leftover
+  // overlay computed from a different symbol's prices would be actively
+  // misleading rather than just a harmless toggle left on.
+  const [patterns, setPatterns] = useState<ChartPattern[]>([]);
   const toast = useToast();
 
   const toggleStudy = (key: keyof ActiveStudies) => {
@@ -91,6 +96,14 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
   const applyChartStudies = (partial: Partial<ActiveStudies>) => {
     setStudies((current) => ({ ...current, ...partial }));
   };
+
+  const applyChartPatterns = (next: ChartPattern[]) => {
+    setPatterns(next);
+  };
+
+  useEffect(() => {
+    setPatterns([]);
+  }, [symbol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,7 +244,12 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
             variant="full"
           />
         ) : section === "charts" ? (
-          <ChartsScreen symbol={symbol} studies={studies} onToggleStudy={toggleStudy} />
+          <ChartsScreen
+            symbol={symbol}
+            studies={studies}
+            onToggleStudy={toggleStudy}
+            patterns={patterns}
+          />
         ) : section === "trade" ? (
           <TradeScreen
             symbol={symbol}
@@ -239,6 +257,7 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
             onClearTradeSetup={() => setTradeSetup(null)}
             studies={studies}
             onToggleStudy={toggleStudy}
+            patterns={patterns}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-nest-muted">
@@ -260,6 +279,7 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
                 symbol={symbol ?? MOCK_SYMBOL}
                 onTradeSetup={setTradeSetup}
                 onChartStudies={applyChartStudies}
+                onChartPatterns={applyChartPatterns}
               />
             ) : (
               <PositionsPanel

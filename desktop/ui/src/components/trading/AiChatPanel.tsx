@@ -7,7 +7,7 @@ import remarkBreaks from "remark-breaks";
 import { clearChatHistory, fetchChatHistory } from "../../lib/chatHistory";
 import { askStockQuestion } from "../../lib/nest";
 import { useToast } from "../../shell";
-import type { ActiveStudies } from "./CandlestickChart";
+import type { ActiveStudies, ChartPattern } from "./CandlestickChart";
 import { ConfirmDialog } from "../ConfirmDialog";
 
 export type AiChatPanelProps = {
@@ -17,6 +17,8 @@ export type AiChatPanelProps = {
   onTradeSetup?: (setup: TradeSetup) => void;
   /** Called when the AI toggles chart studies on/off — merge into current studies. */
   onChartStudies?: (partial: Partial<ActiveStudies>) => void;
+  /** Called when the AI detects chart patterns — replaces whatever overlays are currently shown. */
+  onChartPatterns?: (patterns: ChartPattern[]) => void;
 };
 
 export type TradeSetup = {
@@ -42,9 +44,11 @@ type ChatMessage = {
  */
 const TRADE_SETUP_REGEX = /<TRADE_SETUP>([\s\S]*?)<\/TRADE_SETUP>/;
 const CHART_STUDIES_REGEX = /<CHART_STUDIES>([\s\S]*?)<\/CHART_STUDIES>/;
-const HIDDEN_TAG_REGEX = /<(?:TRADE_SETUP|CHART_STUDIES)>[\s\S]*?<\/(?:TRADE_SETUP|CHART_STUDIES)>/g;
+const CHART_PATTERNS_REGEX = /<CHART_PATTERNS>([\s\S]*?)<\/CHART_PATTERNS>/;
+const HIDDEN_TAG_REGEX =
+  /<(?:TRADE_SETUP|CHART_STUDIES|CHART_PATTERNS)>[\s\S]*?<\/(?:TRADE_SETUP|CHART_STUDIES|CHART_PATTERNS)>/g;
 
-export function AiChatPanel({ symbol, onTradeSetup, onChartStudies }: AiChatPanelProps) {
+export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatterns }: AiChatPanelProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -180,6 +184,23 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies }: AiChatPane
     return null;
   }
 
+  function parseChartPatterns(content: string): ChartPattern[] | null {
+    const match = CHART_PATTERNS_REGEX.exec(content);
+    if (!match || !match[1]) return null;
+    try {
+      const parsed = JSON.parse(match[1].trim()) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const patterns = (parsed as Record<string, unknown>).patterns;
+        if (Array.isArray(patterns)) {
+          return patterns as ChartPattern[];
+        }
+      }
+    } catch {
+      // Ignore malformed JSON.
+    }
+    return null;
+  }
+
   function handleAsk() {
     const trimmed = question.trim();
     if (trimmed === "" || loading) {
@@ -206,6 +227,12 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies }: AiChatPane
             const studies = parseChartStudies(assistantMessage.content);
             if (studies) {
               onChartStudies?.(studies);
+            }
+            // Unlike studies (a partial merge), a fresh pattern answer
+            // replaces whatever overlays are currently drawn.
+            const patterns = parseChartPatterns(assistantMessage.content);
+            if (patterns) {
+              onChartPatterns?.(patterns);
             }
           }
           return current;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Select, type SelectOption } from "@nest/components";
 import { Bell, ChevronDown, LayoutGrid, Plus } from "lucide-react";
-import { CandlestickChart, type ActiveStudies } from "./CandlestickChart";
+import { CandlestickChart, type ActiveStudies, type ChartPattern } from "./CandlestickChart";
 import { StudiesDialog } from "./StudiesDialog";
 import { ChartSettingsDialog } from "./ChartSettingsDialog";
 import {
@@ -29,6 +29,8 @@ type ChartsScreenProps = {
   studies: ActiveStudies;
   /** Toggles one chart study on/off. */
   onToggleStudy: (key: keyof ActiveStudies) => void;
+  /** AI-detected chart pattern overlays — shared with the Trade screen and the AI chat panel. */
+  patterns?: ChartPattern[];
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -49,7 +51,12 @@ const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
 ];
 
 /** Charts section: symbol header, chart toolbar, and the candlestick chart. */
-export function ChartsScreen({ symbol = MOCK_SYMBOL, studies, onToggleStudy }: ChartsScreenProps) {
+export function ChartsScreen({
+  symbol = MOCK_SYMBOL,
+  studies,
+  onToggleStudy,
+  patterns = [],
+}: ChartsScreenProps) {
   const [period, setPeriod] = useState("1y");
   const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
@@ -270,7 +277,7 @@ export function ChartsScreen({ symbol = MOCK_SYMBOL, studies, onToggleStudy }: C
             Chart data unavailable — showing placeholder
           </div>
         )}
-        <CandlestickChart data={candles} studies={studies} />
+        <CandlestickChart data={candles} studies={studies} patterns={patterns} />
       </div>
 
       <StudiesDialog

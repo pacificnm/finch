@@ -19,6 +19,7 @@ use nest_http_client::HttpClientService;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::chart_patterns;
 use crate::schwab;
 
 /// Maximum number of messages to keep in conversation history.
@@ -47,6 +48,7 @@ fn create_system_prompt(symbol: &str, context: &str) -> String {
          - Use calculate_vwap when the user asks about VWAP or whether price is trading above/below the volume-weighted average today.\n\
          - Use calculate_trade_setup when the user asks for a buy price, stop loss, limit/target price, position size, or risk/reward math for a trade.\n\
          - Use set_chart_studies when the user asks you to show, hide, add, remove, or turn on/off a study or indicator overlay on the chart (Volume, moving average, RSI, MACD, ATR, VWAP).\n\
+         - Use detect_chart_patterns when the user asks you to find, identify, spot, or explain a chart pattern (head and shoulders, double top/bottom, triangles), or asks things like 'what pattern is this' or 'is there a pattern here'.\n\
          - Use fetch_stock_news when the user asks for news, recent events, press releases, or 'what's going on with' {symbol}. It only returns headlines for {symbol} — it cannot search the general web or unrelated topics. Call it at most once per question; if it returns no headlines, tell the user immediately instead of retrying.\n\n\
          Response rules:\n\
          - Use the provided market data as ground truth\n\
@@ -59,6 +61,7 @@ fn create_system_prompt(symbol: &str, context: &str) -> String {
          - The calculate_trade_setup tool returns JSON. Parse it and present the values in a clean human-readable format before asking to populate the order ticket\n\
          - For the \"Risk/reward\" line, copy the tool's risk_reward_display field verbatim (e.g. \"1:3.0\") instead of recomputing or reformatting it\n\
          - For chart study requests, call set_chart_studies, then briefly explain what the study shows and why it's relevant right now (this chat is also how the user is learning to read charts), then copy the tool's JSON result verbatim into a <CHART_STUDIES> block on its own line. Only include the studies that changed, exactly as the tool returned them — never recompute or reformat that JSON\n\
+         - For chart pattern requests, call detect_chart_patterns, then explain in plain language why each pattern qualifies using the tool's precomputed points and note (never invent or recompute the numbers), then copy the tool's JSON result verbatim into a <CHART_PATTERNS> block on its own line. If no patterns are found, say so plainly and omit the block\n\
          - Be concise and factual\n\n\
          Example for a trade setup question:\n\
          User: I have $10,000, want 3% gain, 1% risk, what's the setup for AMD?\n\
@@ -78,7 +81,12 @@ fn create_system_prompt(symbol: &str, context: &str) -> String {
          User: can you show me the RSI on the chart?\n\
          Assistant: [uses set_chart_studies with {{\"rsi\":true}}]\n\
          Sure — RSI (Relative Strength Index) measures momentum on a 0-100 scale; readings above 70 suggest overbought, below 30 oversold. I've turned it on below the price chart so you can watch it alongside price action.\n\
-         <CHART_STUDIES>{{\"rsi\":true}}</CHART_STUDIES>"
+         <CHART_STUDIES>{{\"rsi\":true}}</CHART_STUDIES>\n\n\
+         Example for a chart pattern question:\n\
+         User: is there a pattern forming on this chart?\n\
+         Assistant: [uses detect_chart_patterns]\n\
+         Yes — a double top. Two peaks near $182.40 (Jun 3) and $181.90 (Jun 21), within 0.3% of each other, separated by a pullback to $171.20 (Jun 12). Price closed below that $171.20 neckline on Jun 24, confirming the pattern — that's usually read as a bearish reversal signal after an uptrend.\n\
+         <CHART_PATTERNS>{{\"patterns\":[{{\"kind\":\"double_top\",\"status\":\"confirmed\",\"label\":\"Double Top\",\"note\":\"Two peaks near $182.40 on 2026-06-03 and $181.90 on 2026-06-21 (within 0.3% of each other), separated by a pullback to $171.20 on 2026-06-12.\",\"points\":[{{\"date\":\"2026-06-03\",\"price\":182.40,\"role\":\"first_peak\",\"kind\":\"high\"}},{{\"date\":\"2026-06-12\",\"price\":171.20,\"role\":\"trough\",\"kind\":\"low\"}},{{\"date\":\"2026-06-21\",\"price\":181.90,\"role\":\"second_peak\",\"kind\":\"high\"}}],\"lines\":[{{\"role\":\"neckline\",\"from\":{{\"date\":\"2026-06-03\",\"price\":171.20}},\"to\":{{\"date\":\"2026-06-21\",\"price\":171.20}}}}]}}]}}</CHART_PATTERNS>"
     )
 }
 
@@ -345,6 +353,50 @@ fn set_chart_studies_tool_definition() -> ToolDefinition {
                 "macd": { "type": "boolean", "description": "Show (true) or hide (false) the MACD pane (line, signal, and histogram)" },
                 "atr": { "type": "boolean", "description": "Show (true) or hide (false) the ATR (Average True Range) pane" },
                 "vwap": { "type": "boolean", "description": "Show (true) or hide (false) the VWAP line overlaid on price" }
+            },
+            "required": []
+        }),
+    )
+}
+
+/// Detects classical chart patterns (head & shoulders, double top/bottom,
+/// triangles) using deterministic swing-pivot geometry, and returns the
+/// exact points/lines to draw for each match.
+fn detect_chart_patterns_tool_definition(symbol: &str) -> ToolDefinition {
+    ToolDefinition::new(
+        "detect_chart_patterns",
+        format!(
+            "Detects classical chart patterns in {symbol}'s recent daily price history: double top, double bottom, \
+             head and shoulders, inverse head and shoulders, and ascending/descending/symmetrical triangles. \
+             Detection is rule-based geometry over swing highs/lows (not a black-box model) — every match includes the \
+             exact points and lines that define it, and a fact-based note explaining why it qualifies. \
+             Use this when the user asks you to find, identify, or explain a chart pattern, or asks what pattern is \
+             forming. Returns an empty pattern list if nothing currently qualifies — that's a normal, valid result."
+        ),
+        json!({
+            "type": "object",
+            "properties": {
+                "timeframe": {
+                    "type": "string",
+                    "description": "How much daily history to scan: 1m, 3m, 6m, 1y (default 3m). Patterns need enough history to form, so prefer 3m or more unless the user asks for a shorter window.",
+                    "enum": ["1m", "3m", "6m", "1y"]
+                },
+                "pattern_types": {
+                    "type": "array",
+                    "description": "Optional filter to only look for specific pattern kinds. Omit to check all kinds.",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "double_top",
+                            "double_bottom",
+                            "head_and_shoulders",
+                            "inverse_head_and_shoulders",
+                            "ascending_triangle",
+                            "descending_triangle",
+                            "symmetrical_triangle"
+                        ]
+                    }
+                }
             },
             "required": []
         }),
@@ -1127,6 +1179,65 @@ async fn execute_calculate_vwap(symbol: &str, timeframe: Option<&str>) -> Result
     ))
 }
 
+/// Detects chart patterns over recent daily candles and returns them as a
+/// compact JSON payload the model is instructed to echo verbatim into a
+/// `<CHART_PATTERNS>` tag (see `chart_patterns` module for the detection
+/// logic itself).
+async fn execute_detect_chart_patterns(
+    symbol: &str,
+    timeframe: Option<&str>,
+    pattern_types: Option<Vec<&str>>,
+) -> Result<String, String> {
+    let (period_type, period, frequency_type, frequency) =
+        map_timeframe_args(timeframe.or(Some("3m")), Some("1d"));
+
+    let history_str = schwab::price_history(
+        symbol,
+        Some(period_type),
+        Some(period),
+        Some(frequency_type),
+        Some(frequency),
+        None,
+        None,
+    )
+    .await?;
+
+    let history: serde_json::Value = serde_json::from_str(&history_str)
+        .map_err(|e| format!("Failed to parse price history: {e}"))?;
+    let raw_candles = history
+        .get("candles")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if raw_candles.len() < 10 {
+        return Ok(build_chart_patterns_result(Vec::new()));
+    }
+
+    let candles: Vec<chart_patterns::Candle> = raw_candles
+        .iter()
+        .filter_map(|c| {
+            let high = c.get("high").and_then(|v| v.as_f64())?;
+            let low = c.get("low").and_then(|v| v.as_f64())?;
+            let close = c.get("close").and_then(|v| v.as_f64())?;
+            let ms = c
+                .get("datetime")
+                .and_then(|v| v.as_i64())
+                .or_else(|| c.get("date").and_then(|v| v.as_i64()))?;
+            let date = chrono::DateTime::from_timestamp_millis(ms)?
+                .format("%Y-%m-%d")
+                .to_string();
+            Some(chart_patterns::Candle { date, high, low, close })
+        })
+        .collect();
+
+    let true_ranges = calculate_true_ranges(&raw_candles);
+    let atr = wilder_smooth(&true_ranges, 14).last().copied();
+
+    let patterns = chart_patterns::detect_patterns(&candles, atr, pattern_types.as_deref());
+    Ok(build_chart_patterns_result(patterns))
+}
+
 /// Calculates a trade setup based on risk/reward parameters and current market data.
 async fn execute_calculate_trade_setup(
     symbol: &str,
@@ -1207,6 +1318,13 @@ async fn execute_calculate_trade_setup(
 
 fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
+}
+
+/// Builds the `detect_chart_patterns` result: the detected patterns as
+/// compact JSON, or an explicit empty list. Unlike `set_chart_studies`,
+/// finding zero patterns is a valid, common answer, not an error.
+fn build_chart_patterns_result(patterns: Vec<chart_patterns::PatternMatch>) -> String {
+    json!({ "patterns": patterns }).to_string()
 }
 
 /// Builds the `set_chart_studies` result: a compact JSON object of only the
@@ -1311,6 +1429,15 @@ async fn execute_tool_call(
             let atr = tool_call.arguments.get("atr").and_then(|v| v.as_bool());
             let vwap = tool_call.arguments.get("vwap").and_then(|v| v.as_bool());
             build_chart_studies_result(volume, moving_average, rsi, macd, atr, vwap)
+        }
+        "detect_chart_patterns" => {
+            let timeframe = tool_call.arguments.get("timeframe").and_then(|v| v.as_str());
+            let pattern_types: Option<Vec<&str>> = tool_call
+                .arguments
+                .get("pattern_types")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect());
+            execute_detect_chart_patterns(symbol, timeframe, pattern_types).await
         }
         "calculate_trade_setup" => {
             let account_size = tool_call
@@ -1424,6 +1551,7 @@ pub async fn ask_stock_question_stream(
         calculate_atr_tool_definition(symbol),
         calculate_vwap_tool_definition(symbol),
         set_chart_studies_tool_definition(),
+        detect_chart_patterns_tool_definition(symbol),
         calculate_trade_setup_tool_definition(symbol),
     ];
     let provider = OllamaProvider::new(ollama_config.clone())
@@ -1515,6 +1643,7 @@ pub async fn ask_stock_question_stream(
                 "calculate_atr" => "Calculating ATR",
                 "calculate_vwap" => "Calculating VWAP",
                 "set_chart_studies" => "Updating chart",
+                "detect_chart_patterns" => "Detecting chart patterns",
                 "calculate_trade_setup" => "Calculating trade setup",
                 _ => "Using tool",
             };
@@ -1750,5 +1879,28 @@ mod tests {
     #[test]
     fn build_chart_studies_result_errors_when_nothing_specified() {
         assert!(build_chart_studies_result(None, None, None, None, None, None).is_err());
+    }
+
+    #[test]
+    fn build_chart_patterns_result_serializes_an_empty_list() {
+        let result = build_chart_patterns_result(Vec::new());
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["patterns"], json!([]));
+    }
+
+    #[test]
+    fn build_chart_patterns_result_serializes_detected_patterns() {
+        let patterns = vec![chart_patterns::PatternMatch {
+            kind: "double_top",
+            status: "confirmed",
+            label: "Double Top".to_string(),
+            note: "Two peaks near $100.00...".to_string(),
+            points: vec![],
+            lines: vec![],
+        }];
+        let result = build_chart_patterns_result(patterns);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["patterns"][0]["kind"], "double_top");
+        assert_eq!(parsed["patterns"][0]["status"], "confirmed");
     }
 }
