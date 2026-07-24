@@ -23,6 +23,10 @@ fn main() {
                     "ask_stock_question",
                     "settings_get",
                     "settings_set",
+                    "ai_chat_current_session",
+                    "ai_chat_start_new_session",
+                    "ai_chat_sessions",
+                    "ai_chat_session_messages",
                 ])
                 .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
         ),

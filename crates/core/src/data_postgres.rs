@@ -18,7 +18,7 @@
 use nest_core::{AppBuilder, Module, ModuleId, NestResult};
 use nest_data_postgres::{PostgresConnection, POSTGRES_DATA_MODULE_ID};
 
-use crate::chat_history::{chat_history_migration, ChatHistoryRepository};
+use crate::chat_history::{chat_history_migration, chat_sessions_migration, ChatHistoryRepository};
 use crate::settings::{settings_migration, SettingsRepository};
 
 /// App-specific data module. Depends on the PostgreSQL provider.
@@ -45,5 +45,6 @@ pub fn finch_migrations() -> Vec<Box<dyn nest_data::Migration>> {
     vec![
         Box::new(settings_migration()),
         Box::new(chat_history_migration()),
+        Box::new(chat_sessions_migration()),
     ]
 }
