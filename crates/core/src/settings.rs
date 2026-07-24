@@ -44,6 +44,11 @@ pub mod keys {
     pub const CHART_INTERVAL: &str = "chart.interval";
     /// Active chart studies (json).
     pub const CHART_STUDIES: &str = "chart.studies";
+    /// Last selected chart symbol, e.g. "AAPL" (string).
+    pub const CHART_SYMBOL: &str = "chart.symbol";
+    /// Display timezone for market times, an IANA identifier (e.g.
+    /// "America/Chicago") or "auto" to follow the system timezone (string).
+    pub const DISPLAY_TIMEZONE: &str = "display.timezone";
 }
 
 /// A typed setting value.

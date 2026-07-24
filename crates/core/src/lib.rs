@@ -26,12 +26,21 @@ pub enum CliCommand {
     /// Fetch quote data for a symbol (returns JSON).
     SchwabQuoteJson { symbol: String },
     /// Fetch price history candles for a symbol (returns JSON).
+    ///
+    /// `start_date`/`end_date` (epoch milliseconds) take precedence over
+    /// `period_type`/`period` when present — Schwab's relative `periodType`
+    /// windows (esp. `day`) can lag behind the current session, so intraday
+    /// requests should prefer explicit dates. See `schwab::price_history`.
     SchwabPriceHistory {
         symbol: String,
         period_type: String,
         period: String,
         frequency_type: String,
         frequency: String,
+        #[serde(default)]
+        start_date: Option<String>,
+        #[serde(default)]
+        end_date: Option<String>,
     },
 }
 
@@ -56,15 +65,21 @@ pub async fn run_command_async(command: CliCommand) -> Result<String, String> {
             period,
             frequency_type,
             frequency,
+            start_date,
+            end_date,
         } => {
+            // Explicit dates take precedence: Schwab's relative `periodType`
+            // windows (esp. `day`) don't reliably include the current
+            // session, so callers doing intraday polling pass dates instead.
+            let has_dates = start_date.is_some() || end_date.is_some();
             schwab::price_history(
                 &symbol,
-                Some(&period_type),
-                Some(&period),
+                if has_dates { None } else { Some(&period_type) },
+                if has_dates { None } else { Some(&period) },
                 Some(&frequency_type),
                 Some(&frequency),
-                None,
-                None,
+                start_date.as_deref(),
+                end_date.as_deref(),
             )
             .await
         }

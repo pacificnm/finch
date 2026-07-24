@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, CircularProgress, TextField, Typography } from "@nest/components";
-import { Trash2 } from "lucide-react";
+import { History, MessageSquarePlus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { clearChatHistory, fetchChatHistory } from "../../lib/chatHistory";
+import {
+  fetchCurrentSession,
+  fetchSessionMessages,
+  fetchSessions,
+  startNewSession,
+  type SessionSummary,
+} from "../../lib/chatHistory";
 import { askStockQuestion } from "../../lib/nest";
 import { useToast } from "../../shell";
 import type { ActiveStudies, ChartPattern } from "./CandlestickChart";
-import { ConfirmDialog } from "../ConfirmDialog";
 
 export type AiChatPanelProps = {
   /** The symbol currently loaded in the Trade/Charts screen. */
@@ -41,6 +46,10 @@ type ChatMessage = {
  * Chat-style AI assistant scoped to the symbol loaded in the Trade screen.
  * Answers stream in token-by-token via the `ai-chat-*` events emitted by the
  * `ask_stock_question` Tauri command (see `lib/nest.ts`).
+ *
+ * Conversations are grouped into sessions per symbol: "Start fresh" begins a
+ * new one without deleting the old one, and the History picker lists past
+ * sessions to reload (read-only) for review.
  */
 const TRADE_SETUP_REGEX = /<TRADE_SETUP>([\s\S]*?)<\/TRADE_SETUP>/;
 const CHART_STUDIES_REGEX = /<CHART_STUDIES>([\s\S]*?)<\/CHART_STUDIES>/;
@@ -54,7 +63,10 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
   const [historyLoading, setHistoryLoading] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingSetup, setPendingSetup] = useState<TradeSetup | null>(null);
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [viewingSessionId, setViewingSessionId] = useState<number | null>(null);
+  const [historyPickerOpen, setHistoryPickerOpen] = useState(false);
+  const [pastSessions, setPastSessions] = useState<SessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const nextId = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -70,19 +82,21 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
   }, [messages, loading]);
 
   // New symbol = fresh conversation in flight, but reload that symbol's
-  // persisted history so past exchanges (and the AI's past suggestions)
-  // are still there to review.
+  // current session so past exchanges (and the AI's past suggestions) are
+  // still there to review.
   useEffect(() => {
     setQuestion("");
     setLoading(false);
     setPendingSetup(null);
-    setClearConfirmOpen(false);
+    setViewingSessionId(null);
+    setHistoryPickerOpen(false);
+    setPastSessions([]);
     stopRef.current?.();
 
     let cancelled = false;
     setMessages([]);
     setHistoryLoading(true);
-    void fetchChatHistory(symbol)
+    void fetchCurrentSession(symbol)
       .then((rows) => {
         if (cancelled) return;
         const loaded: ChatMessage[] = rows.map((row) => ({
@@ -114,16 +128,75 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
     };
   }, []);
 
-  const handleClearHistory = useCallback(() => {
-    setClearConfirmOpen(false);
-    void clearChatHistory(symbol)
-      .then(() => setMessages([]))
+  function handleStartFresh() {
+    if (loading) return;
+    setHistoryPickerOpen(false);
+    void startNewSession(symbol)
+      .then(() => {
+        setMessages([]);
+        setPendingSetup(null);
+        setViewingSessionId(null);
+      })
       .catch((error: unknown) => {
         // eslint-disable-next-line no-console
-        console.error("[ai-chat] failed to clear history:", error);
-        toast.error(`Failed to clear chat history: ${String(error)}`);
+        console.error("[ai-chat] failed to start a new session:", error);
+        toast.error(`Failed to start a new conversation: ${String(error)}`);
       });
-  }, [symbol, toast]);
+  }
+
+  function handleOpenHistory() {
+    setHistoryPickerOpen((open) => !open);
+    if (historyPickerOpen) return;
+    setSessionsLoading(true);
+    void fetchSessions(symbol)
+      .then(setPastSessions)
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ai-chat] failed to load past sessions:", error);
+        toast.error(`Failed to load chat history: ${String(error)}`);
+      })
+      .finally(() => setSessionsLoading(false));
+  }
+
+  function handleLoadSession(sessionId: number) {
+    setHistoryPickerOpen(false);
+    void fetchSessionMessages(sessionId)
+      .then((rows) => {
+        const loaded: ChatMessage[] = rows.map((row) => ({
+          id: row.id,
+          role: row.role,
+          content: row.content,
+        }));
+        setMessages(loaded);
+        setViewingSessionId(sessionId);
+        setPendingSetup(null);
+      })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ai-chat] failed to load session:", error);
+        toast.error(`Failed to load that conversation: ${String(error)}`);
+      });
+  }
+
+  function handleReturnToCurrent() {
+    setHistoryLoading(true);
+    void fetchCurrentSession(symbol)
+      .then((rows) => {
+        const loaded: ChatMessage[] = rows.map((row) => ({
+          id: row.id,
+          role: row.role,
+          content: row.content,
+        }));
+        nextId.current = loaded.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+        setMessages(loaded);
+        setViewingSessionId(null);
+      })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ai-chat] failed to return to current session:", error);
+      })
+      .finally(() => setHistoryLoading(false));
+  }
 
   function appendMessage(role: ChatMessage["role"], content: string): number {
     const id = nextId.current;
@@ -203,7 +276,7 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
 
   function handleAsk() {
     const trimmed = question.trim();
-    if (trimmed === "" || loading) {
+    if (trimmed === "" || loading || viewingSessionId !== null) {
       return;
     }
     setQuestion("");
@@ -249,21 +322,84 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
     });
   }
 
+  const viewingPastSession = viewingSessionId !== null;
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <Typography variant="subtitle2">Ask about {symbol}</Typography>
-        {messages.length > 0 && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setClearConfirmOpen(true)}
-            title="Clear chat history for this symbol"
-            className="text-nest-muted hover:text-nest-error"
+            onClick={handleStartFresh}
+            disabled={loading}
+            title="Start a fresh conversation (past ones stay in History)"
+            className="text-nest-muted hover:text-nest-foreground disabled:opacity-40"
           >
-            <Trash2 className="size-3.5" />
+            <MessageSquarePlus className="size-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={handleOpenHistory}
+            title="Past conversations"
+            className={`text-nest-muted hover:text-nest-foreground ${historyPickerOpen ? "text-nest-primary" : ""}`}
+          >
+            <History className="size-3.5" />
+          </button>
+        </div>
+
+        {historyPickerOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-nest-md border border-nest-border bg-nest-surface shadow-lg">
+            <div className="border-b border-nest-border px-3 py-2 text-[11px] font-medium text-nest-muted">
+              Past conversations for {symbol}
+            </div>
+            <div className="max-h-72 overflow-auto">
+              {sessionsLoading ? (
+                <div className="flex justify-center p-3">
+                  <CircularProgress size="small" />
+                </div>
+              ) : pastSessions.length === 0 ? (
+                <p className="p-3 text-[12px] text-nest-muted">No past conversations yet.</p>
+              ) : (
+                <ul>
+                  {pastSessions.map((session) => (
+                    <li key={session.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadSession(session.id)}
+                        className={`block w-full border-b border-nest-border/60 px-3 py-2 text-left last:border-b-0 hover:bg-nest-muted/10 ${
+                          session.id === viewingSessionId ? "bg-nest-primary/10" : ""
+                        }`}
+                      >
+                        <p className="text-[11px] text-nest-muted">
+                          {new Date(session.started_at).toLocaleString()} · {session.message_count} message
+                          {session.message_count === 1 ? "" : "s"}
+                        </p>
+                        <p className="truncate text-[12px] text-nest-foreground">
+                          {session.preview || "(no question asked)"}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
       </div>
+
+      {viewingPastSession && (
+        <div className="flex shrink-0 items-center justify-between rounded-nest-md border border-nest-primary bg-nest-primary/10 px-3 py-1.5 text-[11px]">
+          <span className="text-nest-primary">Viewing a past conversation</span>
+          <button
+            type="button"
+            onClick={handleReturnToCurrent}
+            className="font-medium text-nest-primary hover:underline"
+          >
+            Return to current
+          </button>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
         {historyLoading ? (
@@ -284,16 +420,6 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
           </div>
         )}
       </div>
-
-      <ConfirmDialog
-        open={clearConfirmOpen}
-        title="Clear chat history"
-        message={`Delete all saved AI chat history for ${symbol}? This can't be undone.`}
-        confirmLabel="Clear"
-        danger
-        onConfirm={handleClearHistory}
-        onCancel={() => setClearConfirmOpen(false)}
-      />
 
       {pendingSetup && (
         <div className="shrink-0 rounded-nest-md border border-nest-primary bg-nest-primary/10 p-3 text-[11px]">
@@ -331,6 +457,7 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
           multiline
           rows={2}
           value={question}
+          disabled={viewingPastSession}
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -338,12 +465,14 @@ export function AiChatPanel({ symbol, onTradeSetup, onChartStudies, onChartPatte
               handleAsk();
             }
           }}
-          placeholder={`e.g. why did ${symbol} move today?`}
+          placeholder={
+            viewingPastSession ? "Return to current to ask a new question" : `e.g. why did ${symbol} move today?`
+          }
         />
         <div>
           <Button
             variant="contained"
-            disabled={loading || question.trim() === ""}
+            disabled={loading || question.trim() === "" || viewingPastSession}
             onClick={handleAsk}
           >
             Ask

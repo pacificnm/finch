@@ -2193,10 +2193,34 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`",
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`\n- `allow-ai-chat-current-session`\n- `allow-ai-chat-start-new-session`\n- `allow-ai-chat-sessions`\n- `allow-ai-chat-session-messages`",
           "type": "string",
           "const": "finch:default",
-          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`"
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-run-cli`\n- `allow-schwab-auth-begin`\n- `allow-schwab-auth-complete`\n- `allow-schwab-auth-login`\n- `allow-schwab-auth-logout`\n- `allow-schwab-auth-status`\n- `allow-schwab-accounts`\n- `allow-schwab-account-summary`\n- `allow-schwab-orders`\n- `allow-schwab-positions`\n- `allow-ask-stock-question`\n- `allow-settings-get`\n- `allow-settings-set`\n- `allow-ai-chat-current-session`\n- `allow-ai-chat-start-new-session`\n- `allow-ai-chat-sessions`\n- `allow-ai-chat-session-messages`"
+        },
+        {
+          "description": "Enables the ai_chat_current_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-ai-chat-current-session",
+          "markdownDescription": "Enables the ai_chat_current_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the ai_chat_session_messages command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-ai-chat-session-messages",
+          "markdownDescription": "Enables the ai_chat_session_messages command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the ai_chat_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-ai-chat-sessions",
+          "markdownDescription": "Enables the ai_chat_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the ai_chat_start_new_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:allow-ai-chat-start-new-session",
+          "markdownDescription": "Enables the ai_chat_start_new_session command without any pre-configured scope."
         },
         {
           "description": "Enables the ask_stock_question command without any pre-configured scope.",
@@ -2275,6 +2299,30 @@
           "type": "string",
           "const": "finch:allow-settings-set",
           "markdownDescription": "Enables the settings_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ai_chat_current_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-ai-chat-current-session",
+          "markdownDescription": "Denies the ai_chat_current_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ai_chat_session_messages command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-ai-chat-session-messages",
+          "markdownDescription": "Denies the ai_chat_session_messages command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ai_chat_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-ai-chat-sessions",
+          "markdownDescription": "Denies the ai_chat_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ai_chat_start_new_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "finch:deny-ai-chat-start-new-session",
+          "markdownDescription": "Denies the ai_chat_start_new_session command without any pre-configured scope."
         },
         {
           "description": "Denies the ask_stock_question command without any pre-configured scope.",

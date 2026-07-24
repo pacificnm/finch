@@ -15,6 +15,8 @@ export const SettingKeys = {
   chartPeriod: "chart.period",
   chartInterval: "chart.interval",
   chartStudies: "chart.studies",
+  chartSymbol: "chart.symbol",
+  displayTimezone: "display.timezone",
 } as const;
 
 /** Fetches a single setting by key. Returns `null` when absent. */

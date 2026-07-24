@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use finch_core::chat_history::{ChatHistoryRepository, ChatMessageRow};
+use finch_core::chat_history::{ChatHistoryRepository, ChatMessageRow, SessionSummary};
 use finch_core::data_postgres::{finch_migrations, FinchDataModule};
 use finch_core::settings::{SettingValue, SettingsRepository};
 use finch_core::{run_command_async, CliCommand};
@@ -173,7 +173,7 @@ async fn ask_stock_question(
         .map_err(|e| e.to_string())?
         .clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(err) = chat_repo.append(&symbol, "user", &question).await {
+        if let Err(err) = chat_repo.append_to_current_session(&symbol, "user", &question).await {
             eprintln!("Failed to persist chat message (user): {err}");
         }
 
@@ -209,7 +209,7 @@ async fn ask_stock_question(
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .clone();
-                if let Err(err) = chat_repo.append(&symbol, "assistant", &assembled).await {
+                if let Err(err) = chat_repo.append_to_current_session(&symbol, "assistant", &assembled).await {
                     eprintln!("Failed to persist chat message (assistant): {err}");
                 }
                 let _ = app.emit(
@@ -220,7 +220,7 @@ async fn ask_stock_question(
                 );
             }
             Err(message) => {
-                if let Err(err) = chat_repo.append(&symbol, "error", &message).await {
+                if let Err(err) = chat_repo.append_to_current_session(&symbol, "error", &message).await {
                     eprintln!("Failed to persist chat message (error): {err}");
                 }
                 let _ = app.emit(
@@ -261,9 +261,9 @@ async fn settings_set(
     repo.set(&key, value).await.map_err(|e| e.to_string())
 }
 
-/// Returns persisted chat history for `symbol`, oldest first.
+/// Returns `symbol`'s current (most recent) session's messages, oldest first.
 #[tauri::command]
-async fn ai_chat_history(
+async fn ai_chat_current_session(
     state: tauri::State<'_, NestHostState>,
     symbol: String,
 ) -> Result<Vec<ChatMessageRow>, String> {
@@ -271,12 +271,13 @@ async fn ai_chat_history(
         .context
         .service::<ChatHistoryRepository>()
         .map_err(|e| e.to_string())?;
-    repo.list_for_symbol(&symbol).await.map_err(|e| e.to_string())
+    repo.list_current_session(&symbol).await.map_err(|e| e.to_string())
 }
 
-/// Deletes all persisted chat history for `symbol`.
+/// Starts a new session for `symbol` — subsequent messages append to it,
+/// leaving prior sessions untouched and browsable via `ai_chat_sessions`.
 #[tauri::command]
-async fn ai_chat_clear(
+async fn ai_chat_start_new_session(
     state: tauri::State<'_, NestHostState>,
     symbol: String,
 ) -> Result<(), String> {
@@ -284,7 +285,35 @@ async fn ai_chat_clear(
         .context
         .service::<ChatHistoryRepository>()
         .map_err(|e| e.to_string())?;
-    repo.clear_for_symbol(&symbol).await.map_err(|e| e.to_string())
+    repo.start_new_session(&symbol).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Lists `symbol`'s past sessions, most recent first, for the history picker.
+#[tauri::command]
+async fn ai_chat_sessions(
+    state: tauri::State<'_, NestHostState>,
+    symbol: String,
+) -> Result<Vec<SessionSummary>, String> {
+    let repo = state
+        .context
+        .service::<ChatHistoryRepository>()
+        .map_err(|e| e.to_string())?;
+    repo.list_sessions_for_symbol(&symbol).await.map_err(|e| e.to_string())
+}
+
+/// Returns one past session's messages, oldest first.
+#[tauri::command]
+#[allow(non_snake_case)]
+async fn ai_chat_session_messages(
+    state: tauri::State<'_, NestHostState>,
+    sessionId: i64,
+) -> Result<Vec<ChatMessageRow>, String> {
+    let repo = state
+        .context
+        .service::<ChatHistoryRepository>()
+        .map_err(|e| e.to_string())?;
+    repo.list_messages_for_session(sessionId).await.map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -327,8 +356,10 @@ fn main() {
                         ask_stock_question,
                         settings_get,
                         settings_set,
-                        ai_chat_history,
-                        ai_chat_clear,
+                        ai_chat_current_session,
+                        ai_chat_start_new_session,
+                        ai_chat_sessions,
+                        ai_chat_session_messages,
                     ])
                     .build(),
             )

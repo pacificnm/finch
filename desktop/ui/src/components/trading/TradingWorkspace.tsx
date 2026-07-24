@@ -18,6 +18,7 @@ import {
   type SchwabPositionRow,
 } from "../../lib/nest";
 import { SettingKeys, Settings } from "../../lib/settings";
+import { getDefaultIntervalForPeriod, getIntervalOptionsForPeriod, type IntervalValue } from "../../lib/chartIntervals";
 import { useToast } from "../../shell";
 import type { TradeSetup } from "./OrderTicket";
 
@@ -87,23 +88,100 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
   // overlay computed from a different symbol's prices would be actively
   // misleading rather than just a harmless toggle left on.
   const [patterns, setPatterns] = useState<ChartPattern[]>([]);
+  // Chart period/interval, shared across Trade/Charts the same way `studies`
+  // is, and persisted below so the app reopens where it was left.
+  const [period, setPeriod] = useState("1y");
+  const [aggregation, setAggregation] = useState("1d");
   const toast = useToast();
 
   const toggleStudy = (key: keyof ActiveStudies) => {
-    setStudies((current) => ({ ...current, [key]: !current[key] }));
+    setStudies((current) => {
+      const next = { ...current, [key]: !current[key] };
+      void Settings.setJson(SettingKeys.chartStudies, next).catch(() => {});
+      return next;
+    });
   };
 
   const applyChartStudies = (partial: Partial<ActiveStudies>) => {
-    setStudies((current) => ({ ...current, ...partial }));
+    setStudies((current) => {
+      const next = { ...current, ...partial };
+      void Settings.setJson(SettingKeys.chartStudies, next).catch(() => {});
+      return next;
+    });
   };
 
   const applyChartPatterns = (next: ChartPattern[]) => {
     setPatterns(next);
   };
 
+  const handlePeriodChange = (value: string) => {
+    setPeriod(value);
+    void Settings.setString(SettingKeys.chartPeriod, value).catch(() => {});
+  };
+
+  const handleAggregationChange = (value: string) => {
+    setAggregation(value);
+    void Settings.setString(SettingKeys.chartInterval, value).catch(() => {});
+  };
+
   useEffect(() => {
     setPatterns([]);
   }, [symbol]);
+
+  // Restore the last chart period/interval/studies from the previous
+  // session. Runs once on mount — the account/theme/symbol settings each
+  // load the same way, elsewhere. Period and interval are applied together
+  // (not as they each resolve) so the interval-clamp effect below never
+  // sees a saved period paired with the still-default interval, which
+  // would otherwise clamp and persist the wrong value before the real
+  // saved interval arrives.
+  useEffect(() => {
+    void (async () => {
+      let savedStudies: Partial<ActiveStudies> | null = null;
+      let savedPeriod = "";
+      let savedInterval = "";
+      try {
+        savedStudies = (await Settings.getJson<ActiveStudies>(SettingKeys.chartStudies)) ?? null;
+      } catch {
+        // Settings may be unavailable on first run before migrations apply.
+      }
+      try {
+        savedPeriod = await Settings.getString(SettingKeys.chartPeriod, "");
+      } catch {
+        // Settings may be unavailable on first run before migrations apply.
+      }
+      try {
+        savedInterval = await Settings.getString(SettingKeys.chartInterval, "");
+      } catch {
+        // Settings may be unavailable on first run before migrations apply.
+      }
+
+      if (savedStudies) {
+        setStudies((current) => ({ ...current, ...savedStudies }));
+      }
+      if (savedPeriod) {
+        setPeriod(savedPeriod);
+      }
+      if (savedInterval) {
+        setAggregation(savedInterval);
+      }
+    })();
+  }, []);
+
+  // Keep the interval valid for whichever period is selected (e.g. minute
+  // intervals aren't offered for a 1-year period) — mirrors the per-screen
+  // effect this replaced, now centralized since period/interval are shared.
+  useEffect(() => {
+    const validValues = new Set(getIntervalOptionsForPeriod(period).map((option) => option.value));
+    setAggregation((current) => {
+      if (!validValues.has(current as IntervalValue)) {
+        const next = getDefaultIntervalForPeriod(period);
+        void Settings.setString(SettingKeys.chartInterval, next).catch(() => {});
+        return next;
+      }
+      return current;
+    });
+  }, [period]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,12 +327,20 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
             studies={studies}
             onToggleStudy={toggleStudy}
             patterns={patterns}
+            period={period}
+            onPeriodChange={handlePeriodChange}
+            aggregation={aggregation}
+            onAggregationChange={handleAggregationChange}
           />
         ) : section === "trade" ? (
           <TradeScreen
             symbol={symbol}
             tradeSetup={tradeSetup}
             onClearTradeSetup={() => setTradeSetup(null)}
+            period={period}
+            onPeriodChange={handlePeriodChange}
+            aggregation={aggregation}
+            onAggregationChange={handleAggregationChange}
             studies={studies}
             onToggleStudy={toggleStudy}
             patterns={patterns}

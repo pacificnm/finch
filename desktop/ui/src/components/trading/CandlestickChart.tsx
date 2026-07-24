@@ -7,6 +7,7 @@ import {
   LineSeries,
   ColorType,
   type IChartApi,
+  type ISeriesApi,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -20,6 +21,8 @@ import {
 } from "../../lib/indicators";
 import { TrendlinePrimitive } from "../../lib/trendlinePrimitive";
 import type { OhlcvData } from "../../lib/nest";
+import { makeTickMarkFormatter, makeTimeFormatter } from "../../lib/chartTimeFormat";
+import { useTimezone } from "../../context/TimezoneContext";
 
 export type ActiveStudies = {
   volume: boolean;
@@ -114,17 +117,118 @@ function cssVar(name: string, fallback: string): string {
   return value || fallback;
 }
 
+/** Series refs the data-application effect needs — populated by the
+ * structural effect whenever it (re)creates the chart, `null` for any
+ * study that's currently off. */
+type SeriesRefs = {
+  price: ISeriesApi<"Candlestick"> | null;
+  sma: ISeriesApi<"Line"> | null;
+  vwap: ISeriesApi<"Line"> | null;
+  volume: ISeriesApi<"Histogram"> | null;
+  rsi: ISeriesApi<"Line"> | null;
+  macdHistogram: ISeriesApi<"Histogram"> | null;
+  macdLine: ISeriesApi<"Line"> | null;
+  macdSignal: ISeriesApi<"Line"> | null;
+  atr: ISeriesApi<"Line"> | null;
+};
+
+const EMPTY_SERIES_REFS: SeriesRefs = {
+  price: null,
+  sma: null,
+  vwap: null,
+  volume: null,
+  rsi: null,
+  macdHistogram: null,
+  macdLine: null,
+  macdSignal: null,
+  atr: null,
+};
+
+/** Full `setData` on every active series — used for the initial paint and
+ * whenever the dataset itself changed (symbol/period/interval switch),
+ * as opposed to just its latest bar (a live-refresh tick). */
+function applyFullData(series: SeriesRefs, data: OhlcvData[]) {
+  series.price?.setData(data);
+  series.sma?.setData(simpleMovingAverage(data, 20));
+  series.vwap?.setData(vwap(data));
+  series.volume?.setData(volumeHistogram(data));
+  series.rsi?.setData(relativeStrengthIndex(data, 14));
+  series.atr?.setData(averageTrueRange(data, 14));
+  if (series.macdLine || series.macdSignal || series.macdHistogram) {
+    const { macdLine, signalLine, histogram } = macd(data);
+    series.macdLine?.setData(macdLine);
+    series.macdSignal?.setData(signalLine);
+    series.macdHistogram?.setData(histogram);
+  }
+}
+
+/** Patches just the latest bar/point on every active series — no dataset
+ * reset, no `fitContent()`, so zoom/pan/crosshair state survives a live
+ * refresh tick untouched. Safe to call with more than one new/changed bar
+ * (e.g. after a missed poll); each is applied in order. */
+function applyIncrementalUpdate(series: SeriesRefs, data: OhlcvData[], newBars: OhlcvData[]) {
+  for (const bar of newBars) {
+    series.price?.update(bar);
+    series.volume?.update(volumeHistogram([bar])[0]!);
+  }
+  // Windowed indicators (SMA/RSI/MACD/ATR/VWAP) aren't simple per-bar
+  // transforms — recomputing them over the full (still-cheap) series and
+  // taking just the last point is far simpler than maintaining incremental
+  // running state for five different formulas, and just as flicker-free
+  // since only `.update()` (not `.setData()`) is called.
+  const lastOf = <T,>(values: T[]): T | undefined => values[values.length - 1];
+
+  if (series.sma) {
+    const last = lastOf(simpleMovingAverage(data, 20));
+    if (last) series.sma.update(last);
+  }
+  if (series.vwap) {
+    const last = lastOf(vwap(data));
+    if (last) series.vwap.update(last);
+  }
+  if (series.rsi) {
+    const last = lastOf(relativeStrengthIndex(data, 14));
+    if (last) series.rsi.update(last);
+  }
+  if (series.atr) {
+    const last = lastOf(averageTrueRange(data, 14));
+    if (last) series.atr.update(last);
+  }
+  if (series.macdLine || series.macdSignal || series.macdHistogram) {
+    const { macdLine, signalLine, histogram } = macd(data);
+    const lastMacd = lastOf(macdLine);
+    const lastSignal = lastOf(signalLine);
+    const lastHist = lastOf(histogram);
+    if (lastMacd) series.macdLine?.update(lastMacd);
+    if (lastSignal) series.macdSignal?.update(lastSignal);
+    if (lastHist) series.macdHistogram?.update(lastHist);
+  }
+}
+
 /**
  * A candlestick chart mounted via TradingView's lightweight-charts, with
- * optional Volume/Moving Average/RSI/MACD/ATR/VWAP study panes and AI-detected
- * chart pattern overlays (markers + trendlines). Rebuilt from scratch on
- * every `data`/`studies`/`patterns` change — simplest way to keep panes in
- * sync given how few series this chart carries; not worth the incremental-
- * update bookkeeping at this scale.
+ * optional Volume/Moving Average/RSI/MACD/ATR/VWAP study panes and
+ * AI-detected chart pattern overlays (markers + trendlines).
+ *
+ * Two separate effects, deliberately not merged:
+ * - Structural (chart/series/pane creation, pattern markers) runs only when
+ *   `studies`/`patterns` change — rare, user-initiated, a full rebuild here
+ *   is cheap and simplest.
+ * - Data application runs on every `data` change and never tears down the
+ *   chart. It distinguishes a genuinely different dataset (symbol/period/
+ *   interval switch — full `setData` + refit) from a live-refresh tick
+ *   (same series, latest bar(s) changed — `.update()` only), so a 5-10s
+ *   price poll never flickers, resets zoom, or loses the crosshair.
  */
 export function CandlestickChart({ data, studies, patterns = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<SeriesRefs>(EMPTY_SERIES_REFS);
+  // Seeded with the initial `data` (not []) so the structural effect below
+  // paints the real dataset on first mount rather than an empty chart that
+  // only self-corrects once the data-application effect runs after it.
+  const previousDataRef = useRef<OhlcvData[]>(data);
+  const { timezone } = useTimezone();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -159,10 +263,15 @@ export function CandlestickChart({ data, studies, patterns = [] }: CandlestickCh
         borderColor,
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: makeTickMarkFormatter(timezone),
+      },
+      localization: {
+        timeFormatter: makeTimeFormatter(timezone),
       },
     });
     chartRef.current = chart;
 
+    const currentData = previousDataRef.current;
     const priceSeries = chart.addSeries(CandlestickSeries, {
       upColor: successColor,
       downColor: errorColor,
@@ -170,7 +279,7 @@ export function CandlestickChart({ data, studies, patterns = [] }: CandlestickCh
       wickUpColor: successColor,
       wickDownColor: errorColor,
     });
-    priceSeries.setData(data);
+    priceSeries.setData(currentData);
 
     if (patterns.length > 0) {
       const markers: SeriesMarker<Time>[] = patterns.flatMap((pattern) => {
@@ -211,80 +320,83 @@ export function CandlestickChart({ data, studies, patterns = [] }: CandlestickCh
       }
     }
 
+    const nextRefs: SeriesRefs = { ...EMPTY_SERIES_REFS, price: priceSeries };
+
     if (studies.movingAverage) {
-      const smaSeries = chart.addSeries(LineSeries, {
+      nextRefs.sma = chart.addSeries(LineSeries, {
         color: primaryColor,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
       });
-      smaSeries.setData(simpleMovingAverage(data, 20));
+      nextRefs.sma.setData(simpleMovingAverage(currentData, 20));
     }
 
     if (studies.vwap) {
-      const vwapSeries = chart.addSeries(LineSeries, {
+      nextRefs.vwap = chart.addSeries(LineSeries, {
         color: warningColor,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
       });
-      vwapSeries.setData(vwap(data));
+      nextRefs.vwap.setData(vwap(currentData));
     }
 
     let nextPane = 1;
     if (studies.volume) {
-      const volumeSeries = chart.addSeries(
+      nextRefs.volume = chart.addSeries(
         HistogramSeries,
         { priceLineVisible: false, lastValueVisible: false },
         nextPane,
       );
-      volumeSeries.setData(volumeHistogram(data));
+      nextRefs.volume.setData(volumeHistogram(currentData));
       nextPane += 1;
     }
 
     if (studies.rsi) {
-      const rsiSeries = chart.addSeries(
+      nextRefs.rsi = chart.addSeries(
         LineSeries,
         { color: primaryColor, lineWidth: 2, priceLineVisible: false },
         nextPane,
       );
-      rsiSeries.setData(relativeStrengthIndex(data, 14));
+      nextRefs.rsi.setData(relativeStrengthIndex(currentData, 14));
       nextPane += 1;
     }
 
     if (studies.macd) {
-      const { macdLine, signalLine, histogram } = macd(data);
-      const macdHistogramSeries = chart.addSeries(
+      const { macdLine, signalLine, histogram } = macd(currentData);
+      nextRefs.macdHistogram = chart.addSeries(
         HistogramSeries,
         { priceLineVisible: false, lastValueVisible: false },
         nextPane,
       );
-      macdHistogramSeries.setData(histogram);
-      const macdLineSeries = chart.addSeries(
+      nextRefs.macdHistogram.setData(histogram);
+      nextRefs.macdLine = chart.addSeries(
         LineSeries,
         { color: primaryColor, lineWidth: 2, priceLineVisible: false, lastValueVisible: false },
         nextPane,
       );
-      macdLineSeries.setData(macdLine);
-      const signalLineSeries = chart.addSeries(
+      nextRefs.macdLine.setData(macdLine);
+      nextRefs.macdSignal = chart.addSeries(
         LineSeries,
         { color: errorColor, lineWidth: 1, priceLineVisible: false, lastValueVisible: false },
         nextPane,
       );
-      signalLineSeries.setData(signalLine);
+      nextRefs.macdSignal.setData(signalLine);
       nextPane += 1;
     }
 
     if (studies.atr) {
-      const atrSeries = chart.addSeries(
+      nextRefs.atr = chart.addSeries(
         LineSeries,
         { color: warningColor, lineWidth: 2, priceLineVisible: false },
         nextPane,
       );
-      atrSeries.setData(averageTrueRange(data, 14));
+      nextRefs.atr.setData(averageTrueRange(currentData, 14));
       nextPane += 1;
     }
 
+    seriesRef.current = nextRefs;
     chart.timeScale().fitContent();
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -303,8 +415,40 @@ export function CandlestickChart({ data, studies, patterns = [] }: CandlestickCh
       resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
+      seriesRef.current = EMPTY_SERIES_REFS;
     };
-  }, [data, studies, patterns]);
+    // `data` deliberately excluded — the effect below applies it, both at
+    // creation time (via `previousDataRef`, already up to date by the time
+    // this runs) and on every subsequent change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studies, patterns, timezone]);
+
+  useEffect(() => {
+    if (!chartRef.current) {
+      // Structural effect hasn't created the chart yet on this render pass —
+      // just record `data` so it's there when that effect runs.
+      previousDataRef.current = data;
+      return;
+    }
+
+    const previous = previousDataRef.current;
+    const sameDataset =
+      previous.length > 0 && data.length > 0 && previous[0]!.time === data[0]!.time;
+
+    if (!sameDataset) {
+      applyFullData(seriesRef.current, data);
+      chartRef.current.timeScale().fitContent();
+    } else {
+      const previousLastTime = previous[previous.length - 1]!.time;
+      const startIndex = data.findIndex((bar) => bar.time === previousLastTime);
+      const newBars = startIndex === -1 ? data.slice(-1) : data.slice(startIndex);
+      if (newBars.length > 0) {
+        applyIncrementalUpdate(seriesRef.current, data, newBars);
+      }
+    }
+
+    previousDataRef.current = data;
+  }, [data]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
