@@ -12,12 +12,14 @@ type PopularStudy = {
 };
 
 // Matches the reference "Popular Studies" grid. Only Volume, Moving Average,
-// and RSI are wired to the chart so far (key !== null); the rest are shown
-// (for layout parity with thinkorswim) but disabled rather than silently
-// doing nothing on click — a disabled button is honest, a no-op button
-// pretending to work is exactly the kind of thing that reads as broken.
+// RSI, MACD, ATR, and VWAP are wired to the chart so far (key !== null); the
+// rest are shown (for layout parity with thinkorswim) but disabled rather
+// than silently doing nothing on click — a disabled button is honest, a
+// no-op button pretending to work is exactly the kind of thing that reads as
+// broken.
 const POPULAR_STUDIES: PopularStudy[] = [
   { key: null, label: "ADX" },
+  { key: "atr", label: "ATR" },
   { key: null, label: "Awesome Oscillator" },
   { key: null, label: "CCI" },
   { key: null, label: "Comparison" },
@@ -25,6 +27,7 @@ const POPULAR_STUDIES: PopularStudy[] = [
   { key: null, label: "DMI" },
   { key: null, label: "Keltner Channels" },
   { key: null, label: "Linear Regression" },
+  { key: "macd", label: "MACD" },
   { key: "movingAverage", label: "Moving Average" },
   { key: null, label: "Open Interest" },
   { key: null, label: "Pivot Points" },
@@ -35,13 +38,16 @@ const POPULAR_STUDIES: PopularStudy[] = [
   { key: null, label: "Stochastic" },
   { key: null, label: "TRIX" },
   { key: "volume", label: "Volume Profile" },
-  { key: null, label: "VWAP" },
+  { key: "vwap", label: "VWAP" },
 ];
 
 const UPPER_STUDY_LABEL: Record<StudyKey, string> = {
   volume: "Volume",
   movingAverage: "Moving Average",
   rsi: "RSI",
+  macd: "MACD",
+  atr: "ATR",
+  vwap: "VWAP",
 };
 
 type StudiesDialogProps = {

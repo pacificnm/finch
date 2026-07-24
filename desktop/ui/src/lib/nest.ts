@@ -352,11 +352,14 @@ function aggregateCandles(
   });
 }
 
+/** A candle plus its volume — `lightweight-charts`' own `CandlestickData` doesn't carry volume. */
+export type OhlcvData = CandlestickData & { volume: number };
+
 export async function fetchPriceHistory(
   symbol: string,
   period: string,
   interval: string,
-): Promise<CandlestickData[]> {
+): Promise<OhlcvData[]> {
   console.log("[fetchPriceHistory] Calling CLI for symbol:", symbol, "period:", period, "interval:", interval);
   const params = schwabHistoryParams(period, interval);
 
@@ -389,7 +392,8 @@ export async function fetchPriceHistory(
         high: c.high,
         low: c.low,
         close: c.close,
-      }) as CandlestickData,
+        volume: c.volume,
+      }) as OhlcvData,
     );
   } catch (error) {
     console.error("[fetchPriceHistory] Failed:", error);

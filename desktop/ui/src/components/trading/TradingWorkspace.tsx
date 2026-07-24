@@ -3,6 +3,7 @@ import { IconRail, type WorkspaceSection } from "./IconRail";
 import { AccountPanel } from "./AccountPanel";
 import { PositionsPanel } from "./PositionsPanel";
 import { AiChatPanel } from "./AiChatPanel";
+import { type ActiveStudies } from "./CandlestickChart";
 import { ChartsScreen } from "./ChartsScreen";
 import { TradeScreen, MOCK_SYMBOL } from "./TradeScreen";
 import { ResizeHandle } from "./ResizeHandle";
@@ -25,6 +26,15 @@ const SECTION_LABEL: Record<WorkspaceSection, string> = {
   trade: "Trade",
   charts: "Charts",
   scans: "Scans",
+};
+
+const DEFAULT_STUDIES: ActiveStudies = {
+  volume: false,
+  movingAverage: false,
+  rsi: false,
+  macd: false,
+  atr: false,
+  vwap: false,
 };
 
 const MIN_ACCOUNT_WIDTH = 180;
@@ -68,7 +78,19 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
   const [orders, setOrders] = useState<SchwabOrderRow[]>([]);
   const [positions, setPositions] = useState<SchwabPositionRow[]>([]);
   const [tradeSetup, setTradeSetup] = useState<TradeSetup | null>(null);
+  // Shared across Trade/Charts so the AI chat panel can control whichever
+  // chart is currently on screen, and so a study toggled on one screen
+  // stays on when you switch to the other.
+  const [studies, setStudies] = useState<ActiveStudies>(DEFAULT_STUDIES);
   const toast = useToast();
+
+  const toggleStudy = (key: keyof ActiveStudies) => {
+    setStudies((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const applyChartStudies = (partial: Partial<ActiveStudies>) => {
+    setStudies((current) => ({ ...current, ...partial }));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -209,9 +231,15 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
             variant="full"
           />
         ) : section === "charts" ? (
-          <ChartsScreen />
+          <ChartsScreen symbol={symbol} studies={studies} onToggleStudy={toggleStudy} />
         ) : section === "trade" ? (
-          <TradeScreen symbol={symbol} tradeSetup={tradeSetup} onClearTradeSetup={() => setTradeSetup(null)} />
+          <TradeScreen
+            symbol={symbol}
+            tradeSetup={tradeSetup}
+            onClearTradeSetup={() => setTradeSetup(null)}
+            studies={studies}
+            onToggleStudy={toggleStudy}
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-nest-muted">
             <p className="text-sm font-medium">{SECTION_LABEL[section]}</p>
@@ -227,8 +255,12 @@ export function TradingWorkspace({ symbol }: TradingWorkspaceProps) {
             className="shrink-0 border-l border-nest-border bg-nest-surface"
             style={{ width: positionsWidth }}
           >
-            {section === "trade" ? (
-              <AiChatPanel symbol={symbol ?? MOCK_SYMBOL} onTradeSetup={setTradeSetup} />
+            {section === "trade" || section === "charts" ? (
+              <AiChatPanel
+                symbol={symbol ?? MOCK_SYMBOL}
+                onTradeSetup={setTradeSetup}
+                onChartStudies={applyChartStudies}
+              />
             ) : (
               <PositionsPanel
                 accountLabel={accountLabel}

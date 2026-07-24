@@ -5,19 +5,29 @@ import {
   HistogramSeries,
   LineSeries,
   ColorType,
-  type CandlestickData,
   type IChartApi,
 } from "lightweight-charts";
-import { mockVolume, relativeStrengthIndex, simpleMovingAverage } from "../../lib/indicators";
+import {
+  averageTrueRange,
+  macd,
+  relativeStrengthIndex,
+  simpleMovingAverage,
+  volumeHistogram,
+  vwap,
+} from "../../lib/indicators";
+import type { OhlcvData } from "../../lib/nest";
 
 export type ActiveStudies = {
   volume: boolean;
   movingAverage: boolean;
   rsi: boolean;
+  macd: boolean;
+  atr: boolean;
+  vwap: boolean;
 };
 
 type CandlestickChartProps = {
-  data: CandlestickData[];
+  data: OhlcvData[];
   studies: ActiveStudies;
 };
 
@@ -31,7 +41,7 @@ function cssVar(name: string, fallback: string): string {
 
 /**
  * A candlestick chart mounted via TradingView's lightweight-charts, with
- * optional Volume/Moving Average/RSI study panes. Rebuilt from scratch on
+ * optional Volume/Moving Average/RSI/MACD/ATR/VWAP study panes. Rebuilt from scratch on
  * every `data`/`studies` change — simplest way to keep panes in sync given
  * how few series this chart carries; not worth the incremental-update
  * bookkeeping at this scale.
@@ -51,6 +61,7 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
     const successColor = cssVar("--nest-color-success", "#006a4d");
     const errorColor = cssVar("--nest-color-error", "#b91c1c");
     const primaryColor = cssVar("--nest-color-primary", "#003f2d");
+    const warningColor = cssVar("--nest-color-warning", "#b45309");
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -95,6 +106,16 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
       smaSeries.setData(simpleMovingAverage(data, 20));
     }
 
+    if (studies.vwap) {
+      const vwapSeries = chart.addSeries(LineSeries, {
+        color: warningColor,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      vwapSeries.setData(vwap(data));
+    }
+
     let nextPane = 1;
     if (studies.volume) {
       const volumeSeries = chart.addSeries(
@@ -102,7 +123,7 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
         { priceLineVisible: false, lastValueVisible: false },
         nextPane,
       );
-      volumeSeries.setData(mockVolume(data));
+      volumeSeries.setData(volumeHistogram(data));
       nextPane += 1;
     }
 
@@ -113,6 +134,40 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
         nextPane,
       );
       rsiSeries.setData(relativeStrengthIndex(data, 14));
+      nextPane += 1;
+    }
+
+    if (studies.macd) {
+      const { macdLine, signalLine, histogram } = macd(data);
+      const macdHistogramSeries = chart.addSeries(
+        HistogramSeries,
+        { priceLineVisible: false, lastValueVisible: false },
+        nextPane,
+      );
+      macdHistogramSeries.setData(histogram);
+      const macdLineSeries = chart.addSeries(
+        LineSeries,
+        { color: primaryColor, lineWidth: 2, priceLineVisible: false, lastValueVisible: false },
+        nextPane,
+      );
+      macdLineSeries.setData(macdLine);
+      const signalLineSeries = chart.addSeries(
+        LineSeries,
+        { color: errorColor, lineWidth: 1, priceLineVisible: false, lastValueVisible: false },
+        nextPane,
+      );
+      signalLineSeries.setData(signalLine);
+      nextPane += 1;
+    }
+
+    if (studies.atr) {
+      const atrSeries = chart.addSeries(
+        LineSeries,
+        { color: warningColor, lineWidth: 2, priceLineVisible: false },
+        nextPane,
+      );
+      atrSeries.setData(averageTrueRange(data, 14));
+      nextPane += 1;
     }
 
     chart.timeScale().fitContent();

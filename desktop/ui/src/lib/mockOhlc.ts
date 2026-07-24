@@ -1,4 +1,5 @@
-import type { CandlestickData, Time } from "lightweight-charts";
+import type { Time } from "lightweight-charts";
+import type { OhlcvData } from "./nest";
 
 /** Deterministic PRNG (mulberry32) so mock chart data is stable across renders. */
 function mulberry32(seed: number): () => number {
@@ -24,9 +25,9 @@ export function generateMockCandles(
   days = 180,
   startPrice = 100,
   seed = 42,
-): CandlestickData[] {
+): OhlcvData[] {
   const random = mulberry32(seed);
-  const candles: CandlestickData[] = [];
+  const candles: OhlcvData[] = [];
   let price = startPrice;
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -52,6 +53,7 @@ export function generateMockCandles(
       high: round2(high),
       low: round2(Math.max(0.01, low)),
       close: round2(close),
+      volume: Math.round(500_000 + random() * 2_000_000),
     });
   }
 
@@ -63,8 +65,8 @@ function round2(value: number): number {
 }
 
 /** Aggregates daily candles into weekly bars (Mon-anchored), for the interval selector. */
-export function aggregateWeekly(candles: CandlestickData[]): CandlestickData[] {
-  const weeks = new Map<string, CandlestickData[]>();
+export function aggregateWeekly(candles: OhlcvData[]): OhlcvData[] {
+  const weeks = new Map<string, OhlcvData[]>();
   for (const candle of candles) {
     const date = new Date(`${candle.time as string}T00:00:00Z`);
     const weekStart = new Date(date);
@@ -87,5 +89,6 @@ export function aggregateWeekly(candles: CandlestickData[]): CandlestickData[] {
       close: bucket.at(-1)!.close,
       high: Math.max(...bucket.map((c) => c.high)),
       low: Math.min(...bucket.map((c) => c.low)),
+      volume: bucket.reduce((sum, c) => sum + c.volume, 0),
     }));
 }

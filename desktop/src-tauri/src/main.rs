@@ -1,7 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use finch_core::chat_history::{ChatHistoryRepository, ChatMessageRow};
 use finch_core::data_postgres::{finch_migrations, FinchDataModule};
 use finch_core::settings::{SettingValue, SettingsRepository};
 use finch_core::{run_command_async, CliCommand};
@@ -153,21 +154,45 @@ async fn ask_stock_question(
             let model = std::env::var("OLLAMA_CHAT_MODEL")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| nest_ai_ollama::DEFAULT_MODEL.to_string());
+                .unwrap_or_else(|| "qwen3:14b-q4_K_M".to_string());
+            // Mirrors config.toml's [ai] section — kept in sync as the
+            // last-resort fallback when config.toml can't be loaded.
             OllamaConfig::new(base_url, model)
+                .with_num_ctx(40960)
+                .with_temperature(0.2)
+                .with_think(true)
         });
     let http_client = state
         .context
         .service::<nest_http_client::HttpClientService>()
         .map_err(|e| e.to_string())?
         .clone();
+    let chat_repo = state
+        .context
+        .service::<ChatHistoryRepository>()
+        .map_err(|e| e.to_string())?
+        .clone();
     tauri::async_runtime::spawn(async move {
+        if let Err(err) = chat_repo.append(&symbol, "user", &question).await {
+            eprintln!("Failed to persist chat message (user): {err}");
+        }
+
+        // Persisted history should read the same as what was shown live —
+        // including the "thinking" preamble and tool-use indicators — so
+        // accumulate every chunk exactly as sent to the frontend.
+        let transcript = Arc::new(Mutex::new(String::new()));
+        let transcript_writer = transcript.clone();
+
         let result = finch_core::ai::ask_stock_question_stream(
             &ollama_config,
             &http_client,
             &symbol,
             &question,
             |delta| {
+                transcript_writer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push_str(&delta);
                 let _ = app.emit(
                     "ai-chat-chunk",
                     AiChatChunkEvent {
@@ -180,6 +205,13 @@ async fn ask_stock_question(
         .await;
         match result {
             Ok(()) => {
+                let assembled = transcript
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone();
+                if let Err(err) = chat_repo.append(&symbol, "assistant", &assembled).await {
+                    eprintln!("Failed to persist chat message (assistant): {err}");
+                }
                 let _ = app.emit(
                     "ai-chat-done",
                     AiChatDoneEvent {
@@ -188,6 +220,9 @@ async fn ask_stock_question(
                 );
             }
             Err(message) => {
+                if let Err(err) = chat_repo.append(&symbol, "error", &message).await {
+                    eprintln!("Failed to persist chat message (error): {err}");
+                }
                 let _ = app.emit(
                     "ai-chat-error",
                     AiChatErrorEvent {
@@ -224,6 +259,32 @@ async fn settings_set(
         .service::<SettingsRepository>()
         .map_err(|e| e.to_string())?;
     repo.set(&key, value).await.map_err(|e| e.to_string())
+}
+
+/// Returns persisted chat history for `symbol`, oldest first.
+#[tauri::command]
+async fn ai_chat_history(
+    state: tauri::State<'_, NestHostState>,
+    symbol: String,
+) -> Result<Vec<ChatMessageRow>, String> {
+    let repo = state
+        .context
+        .service::<ChatHistoryRepository>()
+        .map_err(|e| e.to_string())?;
+    repo.list_for_symbol(&symbol).await.map_err(|e| e.to_string())
+}
+
+/// Deletes all persisted chat history for `symbol`.
+#[tauri::command]
+async fn ai_chat_clear(
+    state: tauri::State<'_, NestHostState>,
+    symbol: String,
+) -> Result<(), String> {
+    let repo = state
+        .context
+        .service::<ChatHistoryRepository>()
+        .map_err(|e| e.to_string())?;
+    repo.clear_for_symbol(&symbol).await.map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -266,6 +327,8 @@ fn main() {
                         ask_stock_question,
                         settings_get,
                         settings_set,
+                        ai_chat_history,
+                        ai_chat_clear,
                     ])
                     .build(),
             )

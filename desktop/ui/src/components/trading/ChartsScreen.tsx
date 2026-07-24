@@ -10,15 +10,25 @@ import {
   type IntervalValue,
 } from "../../lib/chartIntervals";
 import { aggregateWeekly, generateMockCandles } from "../../lib/mockOhlc";
+import { fetchPriceHistory, fetchQuote, type OhlcvData } from "../../lib/nest";
+import { MOCK_SYMBOL } from "./TradeScreen";
 
-const MOCK_SYMBOL = "SCHG";
-const MOCK_NAME = "Schwab US Large-Cap Growth ETF";
+type QuoteData = {
+  description?: string;
+  lastPrice?: number;
+  netChange?: number;
+  percentChange?: number;
+  bidSize?: string;
+  askSize?: string;
+};
 
-const MOCK_BID_ASK = {
-  bid: 34.12,
-  ask: 34.23,
-  bidSize: "200",
-  askSize: "3K",
+type ChartsScreenProps = {
+  /** Symbol to display. Defaults to MOCK_SYMBOL when not provided. */
+  symbol?: string;
+  /** Which chart studies are on — shared with the Trade screen and the AI chat panel. */
+  studies: ActiveStudies;
+  /** Toggles one chart study on/off. */
+  onToggleStudy: (key: keyof ActiveStudies) => void;
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -38,15 +48,16 @@ const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
   { value: "max", label: "Max", days: 7300 },
 ];
 
-const DEFAULT_STUDIES: ActiveStudies = { volume: false, movingAverage: false, rsi: false };
-
 /** Charts section: symbol header, chart toolbar, and the candlestick chart. */
-export function ChartsScreen() {
+export function ChartsScreen({ symbol = MOCK_SYMBOL, studies, onToggleStudy }: ChartsScreenProps) {
   const [period, setPeriod] = useState("1y");
   const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [studies, setStudies] = useState<ActiveStudies>(DEFAULT_STUDIES);
+  const [quoteData, setQuoteData] = useState<QuoteData | null>(null);
+  const [candles, setCandles] = useState<OhlcvData[]>([]);
+  const [candlesLoading, setCandlesLoading] = useState(false);
+  const [candlesError, setCandlesError] = useState(false);
 
   const intervalOptions = useMemo(() => getIntervalOptionsForPeriod(period), [period]);
 
@@ -60,29 +71,92 @@ export function ChartsScreen() {
     });
   }, [period, intervalOptions]);
 
-  const days = PERIOD_OPTIONS.find((option) => option.value === period)?.days ?? 365;
+  // Fetch real price history when symbol, period, or interval changes.
+  useEffect(() => {
+    if (!symbol) return;
 
-  const candles = useMemo(() => {
-    const daily = generateMockCandles(days, 30, 7);
-    return aggregation === "1w" ? aggregateWeekly(daily) : daily;
-  }, [days, aggregation]);
+    let cancelled = false;
+
+    const loadCandles = async () => {
+      setCandlesLoading(true);
+      setCandlesError(false);
+      try {
+        const data = await fetchPriceHistory(symbol, period, aggregation);
+        if (!cancelled) {
+          if (data.length > 0) {
+            setCandles(data);
+          } else {
+            const days = PERIOD_OPTIONS.find((option) => option.value === period)?.days ?? 365;
+            const daily = generateMockCandles(days, 30, 7);
+            setCandles(aggregation === "1w" ? aggregateWeekly(daily) : daily);
+          }
+        }
+      } catch (error) {
+        console.error(`[ChartsScreen] Failed to fetch price history for ${symbol}:`, error);
+        if (!cancelled) {
+          setCandlesError(true);
+          const days = PERIOD_OPTIONS.find((option) => option.value === period)?.days ?? 365;
+          const daily = generateMockCandles(days, 30, 7);
+          setCandles(aggregation === "1w" ? aggregateWeekly(daily) : daily);
+        }
+      } finally {
+        if (!cancelled) {
+          setCandlesLoading(false);
+        }
+      }
+    };
+
+    loadCandles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, period, aggregation]);
+
+  // Fetch quote data when symbol changes.
+  useEffect(() => {
+    if (!symbol) return;
+
+    let cancelled = false;
+
+    const loadQuote = async () => {
+      try {
+        const data = await fetchQuote(symbol);
+        if (!cancelled) {
+          setQuoteData(data);
+        }
+      } catch (error) {
+        console.error(`[ChartsScreen] Failed to fetch quote for ${symbol}:`, error);
+        if (!cancelled) {
+          setQuoteData({ description: "Failed to load" });
+        }
+      }
+    };
+
+    loadQuote();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
 
   const last = candles.at(-1);
   const prev = candles.at(-2);
-  const change = last && prev ? last.close - prev.close : 0;
-  const changePercent = last && prev && prev.close !== 0 ? (change / prev.close) * 100 : 0;
-  const negative = change < 0;
+  const chartChange = last && prev ? last.close - prev.close : 0;
+  const chartChangePercent = last && prev && prev.close !== 0 ? (chartChange / prev.close) * 100 : 0;
 
-  const toggleStudy = (key: keyof ActiveStudies) => {
-    setStudies((current) => ({ ...current, [key]: !current[key] }));
-  };
+  const displayName = quoteData?.description || symbol;
+  const price = quoteData?.lastPrice ?? (last?.close || 0);
+  const change = quoteData?.netChange ?? chartChange;
+  const changePercent = quoteData?.percentChange ?? chartChangePercent;
+  const negative = change < 0;
 
   return (
     <div className="flex h-full flex-col p-4">
       <div className="mb-3 flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold">{MOCK_SYMBOL}</h1>
-          <p className="text-[12px] text-nest-muted">{MOCK_NAME}</p>
+          <h1 className="text-xl font-semibold">{symbol}</h1>
+          <p className="text-[12px] text-nest-muted">{displayName}</p>
           <div className="mt-1 flex items-center gap-3 text-[12px] text-nest-muted">
             <button
               type="button"
@@ -118,7 +192,7 @@ export function ChartsScreen() {
               <p
                 className={`text-xl font-semibold ${negative ? "text-nest-error" : "text-nest-success"}`}
               >
-                {last.close.toFixed(2)}
+                {price?.toFixed(2) || (last ? last.close.toFixed(2) : "—")}
               </p>
               <p className={`text-[12px] ${negative ? "text-nest-error" : "text-nest-success"}`}>
                 {change >= 0 ? "+" : ""}
@@ -128,8 +202,8 @@ export function ChartsScreen() {
             </div>
             <div className="flex items-center gap-3 text-[12px]">
               <div className="text-right leading-tight">
-                <p className="text-nest-muted">Bid size: {MOCK_BID_ASK.bidSize}</p>
-                <p className="text-nest-muted">Ask size: {MOCK_BID_ASK.askSize}</p>
+                <p className="text-nest-muted">Bid size: {quoteData?.bidSize || "—"}</p>
+                <p className="text-nest-muted">Ask size: {quoteData?.askSize || "—"}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -185,7 +259,17 @@ export function ChartsScreen() {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 rounded-nest-md border border-nest-border">
+      <div className="relative min-h-0 flex-1 rounded-nest-md border border-nest-border">
+        {candlesLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-nest-surface/50 text-[12px] text-nest-muted">
+            Loading chart…
+          </div>
+        )}
+        {candlesError && (
+          <div className="absolute left-2 top-2 z-10 rounded-nest-md bg-nest-error/10 px-2 py-1 text-[11px] text-nest-error">
+            Chart data unavailable — showing placeholder
+          </div>
+        )}
         <CandlestickChart data={candles} studies={studies} />
       </div>
 
@@ -193,7 +277,7 @@ export function ChartsScreen() {
         open={studiesOpen}
         onClose={() => setStudiesOpen(false)}
         active={studies}
-        onToggle={toggleStudy}
+        onToggle={onToggleStudy}
       />
       <ChartSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod ai;
+pub mod chat_history;
 pub mod data_postgres;
 pub mod schwab;
 pub mod settings;

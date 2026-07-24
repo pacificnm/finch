@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, CircularProgress, TextField, Typography } from "@nest/components";
+import { Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+import { clearChatHistory, fetchChatHistory } from "../../lib/chatHistory";
 import { askStockQuestion } from "../../lib/nest";
+import { useToast } from "../../shell";
+import type { ActiveStudies } from "./CandlestickChart";
+import { ConfirmDialog } from "../ConfirmDialog";
 
 export type AiChatPanelProps = {
-  /** The symbol currently loaded in the Trade screen. */
+  /** The symbol currently loaded in the Trade/Charts screen. */
   symbol: string;
   /** Called when the user accepts an AI-generated trade setup. */
   onTradeSetup?: (setup: TradeSetup) => void;
+  /** Called when the AI toggles chart studies on/off — merge into current studies. */
+  onChartStudies?: (partial: Partial<ActiveStudies>) => void;
 };
 
 export type TradeSetup = {
@@ -33,15 +41,20 @@ type ChatMessage = {
  * `ask_stock_question` Tauri command (see `lib/nest.ts`).
  */
 const TRADE_SETUP_REGEX = /<TRADE_SETUP>([\s\S]*?)<\/TRADE_SETUP>/;
+const CHART_STUDIES_REGEX = /<CHART_STUDIES>([\s\S]*?)<\/CHART_STUDIES>/;
+const HIDDEN_TAG_REGEX = /<(?:TRADE_SETUP|CHART_STUDIES)>[\s\S]*?<\/(?:TRADE_SETUP|CHART_STUDIES)>/g;
 
-export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
+export function AiChatPanel({ symbol, onTradeSetup, onChartStudies }: AiChatPanelProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingSetup, setPendingSetup] = useState<TradeSetup | null>(null);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const nextId = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -52,12 +65,41 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
     }
   }, [messages, loading]);
 
-  // Clear chat when symbol changes (new stock = fresh conversation)
+  // New symbol = fresh conversation in flight, but reload that symbol's
+  // persisted history so past exchanges (and the AI's past suggestions)
+  // are still there to review.
   useEffect(() => {
-    setMessages([]);
     setQuestion("");
     setLoading(false);
+    setPendingSetup(null);
+    setClearConfirmOpen(false);
     stopRef.current?.();
+
+    let cancelled = false;
+    setMessages([]);
+    setHistoryLoading(true);
+    void fetchChatHistory(symbol)
+      .then((rows) => {
+        if (cancelled) return;
+        const loaded: ChatMessage[] = rows.map((row) => ({
+          id: row.id,
+          role: row.role,
+          content: row.content,
+        }));
+        nextId.current = loaded.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+        setMessages(loaded);
+      })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ai-chat] failed to load history:", error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   // Stop listening for a still-in-flight answer if the panel unmounts (e.g.
@@ -67,6 +109,17 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
       stopRef.current?.();
     };
   }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setClearConfirmOpen(false);
+    void clearChatHistory(symbol)
+      .then(() => setMessages([]))
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[ai-chat] failed to clear history:", error);
+        toast.error(`Failed to clear chat history: ${String(error)}`);
+      });
+  }, [symbol, toast]);
 
   function appendMessage(role: ChatMessage["role"], content: string): number {
     const id = nextId.current;
@@ -105,6 +158,28 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
     return null;
   }
 
+  function parseChartStudies(content: string): Partial<ActiveStudies> | null {
+    const match = CHART_STUDIES_REGEX.exec(content);
+    if (!match || !match[1]) return null;
+    try {
+      const parsed = JSON.parse(match[1].trim()) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const record = parsed as Record<string, unknown>;
+        const partial: Partial<ActiveStudies> = {};
+        if (typeof record.volume === "boolean") partial.volume = record.volume;
+        if (typeof record.moving_average === "boolean") partial.movingAverage = record.moving_average;
+        if (typeof record.rsi === "boolean") partial.rsi = record.rsi;
+        if (typeof record.macd === "boolean") partial.macd = record.macd;
+        if (typeof record.atr === "boolean") partial.atr = record.atr;
+        if (typeof record.vwap === "boolean") partial.vwap = record.vwap;
+        return Object.keys(partial).length > 0 ? partial : null;
+      }
+    } catch {
+      // Ignore malformed JSON.
+    }
+    return null;
+  }
+
   function handleAsk() {
     const trimmed = question.trim();
     if (trimmed === "" || loading) {
@@ -126,6 +201,12 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
             if (setup) {
               setPendingSetup(setup);
             }
+            // Chart studies are cosmetic/reversible — apply immediately,
+            // no confirmation click needed (unlike populating a real order).
+            const studies = parseChartStudies(assistantMessage.content);
+            if (studies) {
+              onChartStudies?.(studies);
+            }
           }
           return current;
         });
@@ -143,14 +224,30 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <Typography variant="subtitle2">Ask about {symbol}</Typography>
+      <div className="flex items-center justify-between">
+        <Typography variant="subtitle2">Ask about {symbol}</Typography>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setClearConfirmOpen(true)}
+            title="Clear chat history for this symbol"
+            className="text-nest-muted hover:text-nest-error"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
+      </div>
 
       <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-        {messages.length === 0 && (
+        {historyLoading ? (
+          <div data-testid="ai-chat-history-loading">
+            <CircularProgress size="small" />
+          </div>
+        ) : messages.length === 0 ? (
           <Typography variant="body2" className="text-nest-muted">
             Ask a question about {symbol}, e.g. &quot;how has it performed this month?&quot;
           </Typography>
-        )}
+        ) : null}
         {messages.map((message) => (
           <ChatBubble key={message.id} message={message} />
         ))}
@@ -160,6 +257,16 @@ export function AiChatPanel({ symbol, onTradeSetup }: AiChatPanelProps) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title="Clear chat history"
+        message={`Delete all saved AI chat history for ${symbol}? This can't be undone.`}
+        confirmLabel="Clear"
+        danger
+        onConfirm={handleClearHistory}
+        onCancel={() => setClearConfirmOpen(false)}
+      />
 
       {pendingSetup && (
         <div className="shrink-0 rounded-nest-md border border-nest-primary bg-nest-primary/10 p-3 text-[11px]">
@@ -235,12 +342,14 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     return <Alert severity="error">{message.content}</Alert>;
   }
 
+  const displayContent = message.content.replace(HIDDEN_TAG_REGEX, "").trim();
+
   return (
     <article
       className="nest-rich-text max-w-[95%] rounded-nest-md border border-nest-border bg-nest-surface p-3"
       data-testid="ai-chat-response"
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content || "…"}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayContent || "…"}</ReactMarkdown>
     </article>
   );
 }

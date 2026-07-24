@@ -13,8 +13,7 @@ import {
   type IntervalValue,
 } from "../../lib/chartIntervals";
 import { generateMockCandles } from "../../lib/mockOhlc";
-import { fetchPriceHistory, fetchQuote } from "../../lib/nest";
-import type { CandlestickData } from "lightweight-charts";
+import { fetchPriceHistory, fetchQuote, type OhlcvData } from "../../lib/nest";
 import type { TradeSetup } from "./OrderTicket";
 
 export const MOCK_SYMBOL = "SCHG";
@@ -35,6 +34,10 @@ type TradeScreenProps = {
   tradeSetup?: TradeSetup | null;
   /** Called when the user clears the AI trade setup from the order ticket. */
   onClearTradeSetup?: () => void;
+  /** Which chart studies are on — shared with the Charts screen and the AI chat panel. */
+  studies: ActiveStudies;
+  /** Toggles one chart study on/off. */
+  onToggleStudy: (key: keyof ActiveStudies) => void;
 };
 
 const PERIOD_OPTIONS: (SelectOption & { days: number })[] = [
@@ -61,18 +64,21 @@ const HEADER_TABS = [
   { value: "optionStats", label: "Option Stats" },
 ];
 
-const DEFAULT_STUDIES: ActiveStudies = { volume: false, movingAverage: false, rsi: false };
-
-export function TradeScreen({ symbol = MOCK_SYMBOL, tradeSetup, onClearTradeSetup }: TradeScreenProps) {
+export function TradeScreen({
+  symbol = MOCK_SYMBOL,
+  tradeSetup,
+  onClearTradeSetup,
+  studies,
+  onToggleStudy,
+}: TradeScreenProps) {
   const [activeHeaderTab, setActiveHeaderTab] = useState("quote");
   const [period, setPeriod] = useState("1y");
   const [aggregation, setAggregation] = useState("1d");
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [studies, setStudies] = useState<ActiveStudies>(DEFAULT_STUDIES);
   const [currentSymbol, setCurrentSymbol] = useState(symbol);
   const [quoteData, setQuoteData] = useState<QuoteData | null>(null);
-  const [candles, setCandles] = useState<CandlestickData[]>([]);
+  const [candles, setCandles] = useState<OhlcvData[]>([]);
   const [candlesLoading, setCandlesLoading] = useState(false);
   const [candlesError, setCandlesError] = useState(false);
 
@@ -133,10 +139,6 @@ export function TradeScreen({ symbol = MOCK_SYMBOL, tradeSetup, onClearTradeSetu
   const prev = candles.at(-2);
   const chartChange = last && prev ? last.close - prev.close : 0;
   const chartChangePercent = last && prev && prev.close !== 0 ? (chartChange / prev.close) * 100 : 0;
-
-  const toggleStudy = (key: keyof ActiveStudies) => {
-    setStudies((current) => ({ ...current, [key]: !current[key] }));
-  };
 
   // Fetch quote data when symbol changes
   useEffect(() => {
@@ -329,7 +331,7 @@ export function TradeScreen({ symbol = MOCK_SYMBOL, tradeSetup, onClearTradeSetu
         open={studiesOpen}
         onClose={() => setStudiesOpen(false)}
         active={studies}
-        onToggle={toggleStudy}
+        onToggle={onToggleStudy}
       />
       <ChartSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
