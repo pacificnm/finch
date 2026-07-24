@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
   ColorType,
   type IChartApi,
+  type SeriesMarker,
+  type Time,
 } from "lightweight-charts";
 import {
   averageTrueRange,
@@ -15,6 +18,7 @@ import {
   volumeHistogram,
   vwap,
 } from "../../lib/indicators";
+import { TrendlinePrimitive } from "../../lib/trendlinePrimitive";
 import type { OhlcvData } from "../../lib/nest";
 
 export type ActiveStudies = {
@@ -26,10 +30,81 @@ export type ActiveStudies = {
   vwap: boolean;
 };
 
+/** One swing point that defines a detected chart pattern (a peak, trough, shoulder, head, etc.). */
+export type PatternPoint = {
+  /** "YYYY-MM-DD" — patterns are daily-only for now. */
+  date: string;
+  price: number;
+  role: string;
+  kind: "high" | "low";
+};
+
+export type PatternLinePoint = {
+  date: string;
+  price: number;
+};
+
+/** A straight segment (neckline, trendline side) drawn between two points. */
+export type PatternLine = {
+  role: string;
+  from: PatternLinePoint;
+  to: PatternLinePoint;
+};
+
+/** A single AI-detected chart pattern, as produced by the `detect_chart_patterns` tool. */
+export type ChartPattern = {
+  kind: string;
+  status: "forming" | "confirmed" | string;
+  label: string;
+  note: string;
+  points: PatternPoint[];
+  lines: PatternLine[];
+};
+
 type CandlestickChartProps = {
   data: OhlcvData[];
   studies: ActiveStudies;
+  /** AI-detected chart pattern overlays (trendlines + labeled swing points). */
+  patterns?: ChartPattern[];
 };
+
+const PATTERN_POINT_LABELS: Record<string, string> = {
+  first_peak: "Peak 1",
+  second_peak: "Peak 2",
+  first_trough: "Trough 1",
+  second_trough: "Trough 2",
+  trough: "Trough",
+  peak: "Peak",
+  left_shoulder: "LS",
+  right_shoulder: "RS",
+  head: "Head",
+  left_trough: "LT",
+  right_trough: "RT",
+  left_peak: "LP",
+  right_peak: "RP",
+  swing_high: "H",
+  swing_low: "L",
+};
+
+const PATTERN_LINE_LABELS: Record<string, string> = {
+  neckline: "Neckline",
+  upper_trendline: "Upper",
+  lower_trendline: "Lower",
+};
+
+/** Bearish patterns render in the error color, bullish in the success color; triangles are directionally neutral until broken, so they use the primary color. */
+function patternColor(
+  kind: string,
+  colors: { success: string; error: string; primary: string },
+): string {
+  if (kind === "double_top" || kind === "head_and_shoulders") {
+    return colors.error;
+  }
+  if (kind === "double_bottom" || kind === "inverse_head_and_shoulders") {
+    return colors.success;
+  }
+  return colors.primary;
+}
 
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") {
@@ -41,12 +116,13 @@ function cssVar(name: string, fallback: string): string {
 
 /**
  * A candlestick chart mounted via TradingView's lightweight-charts, with
- * optional Volume/Moving Average/RSI/MACD/ATR/VWAP study panes. Rebuilt from scratch on
- * every `data`/`studies` change — simplest way to keep panes in sync given
- * how few series this chart carries; not worth the incremental-update
- * bookkeeping at this scale.
+ * optional Volume/Moving Average/RSI/MACD/ATR/VWAP study panes and AI-detected
+ * chart pattern overlays (markers + trendlines). Rebuilt from scratch on
+ * every `data`/`studies`/`patterns` change — simplest way to keep panes in
+ * sync given how few series this chart carries; not worth the incremental-
+ * update bookkeeping at this scale.
  */
-export function CandlestickChart({ data, studies }: CandlestickChartProps) {
+export function CandlestickChart({ data, studies, patterns = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -95,6 +171,45 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
       wickDownColor: errorColor,
     });
     priceSeries.setData(data);
+
+    if (patterns.length > 0) {
+      const markers: SeriesMarker<Time>[] = patterns.flatMap((pattern) => {
+        const color = patternColor(pattern.kind, {
+          success: successColor,
+          error: errorColor,
+          primary: primaryColor,
+        });
+        return pattern.points.map((point) => ({
+          time: point.date as Time,
+          position: point.kind === "high" ? "aboveBar" : "belowBar",
+          shape: point.kind === "high" ? "arrowDown" : "arrowUp",
+          color,
+          text: PATTERN_POINT_LABELS[point.role] ?? point.role,
+        }));
+      });
+      createSeriesMarkers(priceSeries, markers);
+
+      for (const pattern of patterns) {
+        const color = patternColor(pattern.kind, {
+          success: successColor,
+          error: errorColor,
+          primary: primaryColor,
+        });
+        for (const line of pattern.lines) {
+          priceSeries.attachPrimitive(
+            new TrendlinePrimitive(
+              { time: line.from.date as Time, price: line.from.price },
+              { time: line.to.date as Time, price: line.to.price },
+              {
+                color,
+                dashed: pattern.status !== "confirmed",
+                label: PATTERN_LINE_LABELS[line.role] ?? line.role,
+              },
+            ),
+          );
+        }
+      }
+    }
 
     if (studies.movingAverage) {
       const smaSeries = chart.addSeries(LineSeries, {
@@ -189,7 +304,7 @@ export function CandlestickChart({ data, studies }: CandlestickChartProps) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [data, studies]);
+  }, [data, studies, patterns]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
