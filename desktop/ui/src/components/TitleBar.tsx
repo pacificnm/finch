@@ -25,6 +25,8 @@ type TitleBarProps = {
   onSelectTheme: (id: string) => void;
   /** Called when a symbol is selected from the search box. */
   onSymbolSelect: (symbol: string) => void;
+  /** File → Settings. */
+  onOpenSettings: () => void;
 };
 
 const menuButtonClass = "h-full px-2.5 text-[12px] text-nest-foreground hover:bg-nest-muted/12";
@@ -58,6 +60,7 @@ export function TitleBar({
   activeThemeId,
   onSelectTheme,
   onSymbolSelect,
+  onOpenSettings,
 }: TitleBarProps) {
   const [openMenu, setOpenMenu] = useState<TitleBarMenu>(null);
   const [fileSubmenu, setFileSubmenu] = useState<FileSubmenu>(null);
@@ -128,6 +131,13 @@ export function TitleBar({
           ) : (
             <MenuItemDisabled label="Theme" />
           )}
+          <MenuItem
+            label="Settings"
+            onClick={() => {
+              onOpenSettings();
+              close();
+            }}
+          />
           <MenuItem
             label="Log Out"
             onClick={() => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { LoginScreen } from "./components/LoginScreen";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { TradingWorkspace } from "./components/trading/TradingWorkspace";
 import { AppShell, useStatusBar, useToast } from "./shell";
 import {
@@ -16,6 +17,7 @@ import {
   type ThemeSummary,
 } from "./lib/nest";
 import { quitApp } from "./lib/tauri";
+import { SettingKeys, Settings } from "./lib/settings";
 
 const THEME_STORAGE_KEY = "finch.theme-id";
 const DEFAULT_SYMBOL = "SCHG";
@@ -26,6 +28,7 @@ export function App() {
   const [activeThemeId, setActiveThemeId] = useState<string | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_SYMBOL);
   const [authStatus, setAuthStatus] = useState<"checking" | "logged-in" | "logged-out">("checking");
+  const [showSettings, setShowSettings] = useState(false);
   const toast = useToast();
   const { setStatus } = useStatusBar();
 
@@ -52,6 +55,17 @@ export function App() {
     })();
 
     void checkAuth();
+
+    void (async () => {
+      try {
+        const saved = await Settings.getString(SettingKeys.chartSymbol, "");
+        if (saved) {
+          setSelectedSymbol(saved);
+        }
+      } catch {
+        // Settings may be unavailable on first run before migrations apply.
+      }
+    })();
 
     void (async () => {
       try {
@@ -90,6 +104,9 @@ export function App() {
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol);
     setStatus(`Loaded ${symbol}`, { variant: "success", timeoutMs: 2000 });
+    void Settings.setString(SettingKeys.chartSymbol, symbol).catch((error: unknown) =>
+      toast.error(`Failed to save symbol: ${String(error)}`),
+    );
   };
 
   return (
@@ -100,6 +117,7 @@ export function App() {
           activeThemeId={activeThemeId}
           onSelectTheme={handleSelectTheme}
           onSymbolSelect={handleSymbolSelect}
+          onOpenSettings={() => setShowSettings(true)}
           onLogOut={() => {
             void schwabAuthLogout()
               .then(() => setAuthStatus("logged-out"))
@@ -125,7 +143,9 @@ export function App() {
       statusLeft={<span>Ready</span>}
       statusRight={<span>{metadata?.name ?? "…"}</span>}
     >
-      {authStatus === "checking" ? (
+      {showSettings ? (
+        <SettingsScreen onClose={() => setShowSettings(false)} />
+      ) : authStatus === "checking" ? (
         <div className="flex h-full items-center justify-center text-nest-muted">
           Checking login status…
         </div>
