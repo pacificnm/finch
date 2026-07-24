@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { LoginScreen } from "./components/LoginScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { HelpDocumentsDrawer } from "./components/HelpDocumentsDrawer";
 import { TradingWorkspace } from "./components/trading/TradingWorkspace";
 import { AppShell, useStatusBar, useToast } from "./shell";
 import {
@@ -29,6 +30,7 @@ export function App() {
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_SYMBOL);
   const [authStatus, setAuthStatus] = useState<"checking" | "logged-in" | "logged-out">("checking");
   const [showSettings, setShowSettings] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const toast = useToast();
   const { setStatus } = useStatusBar();
 
@@ -110,50 +112,54 @@ export function App() {
   };
 
   return (
-    <AppShell
-      titleBar={
-        <TitleBar
-          themes={themes}
-          activeThemeId={activeThemeId}
-          onSelectTheme={handleSelectTheme}
-          onSymbolSelect={handleSymbolSelect}
-          onOpenSettings={() => setShowSettings(true)}
-          onLogOut={() => {
-            void schwabAuthLogout()
-              .then(() => setAuthStatus("logged-out"))
-              .catch((error: unknown) => toast.error(`Failed to log out: ${String(error)}`));
-          }}
-          onQuit={() => void quitApp()}
-          onShowRecipes={() => {
-            void runCli("ListRecipes")
-              .then((recipes) => toast.info(recipes || "No recipes applied."))
-              .catch((error: unknown) =>
-                toast.error(`Failed to list recipes: ${String(error)}`),
-              );
-          }}
-          onAbout={() => {
-            void runCli("AboutVersion")
-              .then((version) => toast.info(`${appTitle} v${version}`))
-              .catch((error: unknown) =>
-                toast.error(`Failed to read version: ${String(error)}`),
-              );
-          }}
-        />
-      }
-      statusLeft={<span>Ready</span>}
-      statusRight={<span>{metadata?.name ?? "…"}</span>}
-    >
-      {showSettings ? (
-        <SettingsScreen onClose={() => setShowSettings(false)} />
-      ) : authStatus === "checking" ? (
-        <div className="flex h-full items-center justify-center text-nest-muted">
-          Checking login status…
-        </div>
-      ) : authStatus === "logged-out" ? (
-        <LoginScreen onLoggedIn={() => setAuthStatus("logged-in")} />
-      ) : (
-        <TradingWorkspace symbol={selectedSymbol} />
-      )}
-    </AppShell>
+    <>
+      <AppShell
+        titleBar={
+          <TitleBar
+            themes={themes}
+            activeThemeId={activeThemeId}
+            onSelectTheme={handleSelectTheme}
+            onSymbolSelect={handleSymbolSelect}
+            onOpenSettings={() => setShowSettings(true)}
+            onLogOut={() => {
+              void schwabAuthLogout()
+                .then(() => setAuthStatus("logged-out"))
+                .catch((error: unknown) => toast.error(`Failed to log out: ${String(error)}`));
+            }}
+            onQuit={() => void quitApp()}
+            onShowRecipes={() => {
+              void runCli("ListRecipes")
+                .then((recipes) => toast.info(recipes || "No recipes applied."))
+                .catch((error: unknown) =>
+                  toast.error(`Failed to list recipes: ${String(error)}`),
+                );
+            }}
+            onAbout={() => {
+              void runCli("AboutVersion")
+                .then((version) => toast.info(`${appTitle} v${version}`))
+                .catch((error: unknown) =>
+                  toast.error(`Failed to read version: ${String(error)}`),
+                );
+            }}
+            onOpenDocuments={() => setDocsOpen(true)}
+          />
+        }
+        statusLeft={<span>Ready</span>}
+        statusRight={<span>{metadata?.name ?? "…"}</span>}
+      >
+        {showSettings ? (
+          <SettingsScreen onClose={() => setShowSettings(false)} />
+        ) : authStatus === "checking" ? (
+          <div className="flex h-full items-center justify-center text-nest-muted">
+            Checking login status…
+          </div>
+        ) : authStatus === "logged-out" ? (
+          <LoginScreen onLoggedIn={() => setAuthStatus("logged-in")} />
+        ) : (
+          <TradingWorkspace symbol={selectedSymbol} />
+        )}
+      </AppShell>
+      <HelpDocumentsDrawer open={docsOpen} onClose={() => setDocsOpen(false)} />
+    </>
   );
 }

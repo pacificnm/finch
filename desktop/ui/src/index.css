@@ -43,6 +43,19 @@ body,
   animation: toast-in 0.2s ease-out;
 }
 
+@keyframes help-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.help-drawer-enter {
+  animation: help-drawer-in 0.2s ease-out;
+}
+
 /* Rich text content — restore list markers stripped by Tailwind base. */
 .nest-rich-text ul {
   list-style: disc;
@@ -59,6 +72,73 @@ body,
 .nest-rich-text a {
   color: var(--nest-color-primary);
   text-decoration: underline;
+}
+
+.nest-rich-text h1,
+.nest-rich-text h2,
+.nest-rich-text h3 {
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  line-height: 1.3;
+}
+
+.nest-rich-text h1 {
+  font-size: 1.25rem;
+}
+
+.nest-rich-text h2 {
+  font-size: 1.1rem;
+}
+
+.nest-rich-text h3 {
+  font-size: 1rem;
+}
+
+.nest-rich-text h1:first-child,
+.nest-rich-text h2:first-child,
+.nest-rich-text h3:first-child {
+  margin-top: 0;
+}
+
+.nest-rich-text p {
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+
+.nest-rich-text code {
+  border-radius: 0.25rem;
+  background-color: var(--nest-color-muted);
+  background-color: color-mix(in srgb, var(--nest-color-muted) 15%, transparent);
+  padding: 0.1rem 0.35rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+}
+
+.nest-rich-text blockquote {
+  margin: 0.5rem 0;
+  border-left: 3px solid var(--nest-color-border);
+  padding: 0.1rem 0 0.1rem 0.75rem;
+  color: var(--nest-color-muted);
+}
+
+.nest-rich-text table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+}
+
+.nest-rich-text th,
+.nest-rich-text td {
+  border: 1px solid var(--nest-color-border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.nest-rich-text th {
+  background-color: var(--nest-color-border);
+  background-color: color-mix(in srgb, var(--nest-color-border) 30%, transparent);
+  font-weight: 600;
 }
 
 /* Nest UI Browser - Component Viewer */

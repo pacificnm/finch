@@ -17,6 +17,8 @@ type TitleBarProps = {
   onShowRecipes: () => void;
   /** Help → About. */
   onAbout: () => void;
+  /** Help → Documents. */
+  onOpenDocuments: () => void;
   /** File → Theme: every registered theme, for the submenu list. */
   themes: ThemeSummary[];
   /** Id of the currently active theme, for the submenu's checkmark. */
@@ -56,6 +58,7 @@ export function TitleBar({
   onQuit,
   onShowRecipes,
   onAbout,
+  onOpenDocuments,
   themes,
   activeThemeId,
   onSelectTheme,
@@ -173,6 +176,13 @@ export function TitleBar({
             label="About"
             onClick={() => {
               onAbout();
+              close();
+            }}
+          />
+          <MenuItem
+            label="Documents"
+            onClick={() => {
+              onOpenDocuments();
               close();
             }}
           />
